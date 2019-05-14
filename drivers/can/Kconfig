@@ -35,6 +35,12 @@ config CAN_1
 	help
 	  Enable CAN controller 1
 
+config CAN_2
+	bool "Enable CAN 2"
+	default y
+	help
+	  Enable CAN controller 2
+
 source "drivers/can/Kconfig.stm32"
 
 endif # CAN

@@ -933,3 +933,53 @@ NET_DEVICE_INIT(socket_can_stm32_1, SOCKET_CAN_NAME_1, socket_can_init_1,
 #endif /* CONFIG_NET_SOCKETS_CAN */
 
 #endif /*CONFIG_CAN_1*/
+
+#ifdef CONFIG_CAN_2
+
+static void config_can_2_irq(CAN_TypeDef *can);
+
+static const struct can_stm32_config can_stm32_cfg_2 = {
+	.can = (CAN_TypeDef *)DT_CAN_2_BASE_ADDRESS,
+	.bus_speed = DT_CAN_2_BUS_SPEED,
+	.sjw = DT_CAN_2_SJW,
+	.prop_bs1 = DT_CAN_2_PROP_SEG_PHASE_SEG1,
+	.bs2 = DT_CAN_2_PHASE_SEG2,
+	.pclken = {
+		.enr = DT_CAN_2_CLOCK_BITS,
+		.bus = DT_CAN_2_CLOCK_BUS,
+	},
+	.config_irq = config_can_2_irq
+};
+
+static struct can_stm32_data can_stm32_dev_data_2;
+
+DEVICE_AND_API_INIT(can_stm32_2, DT_CAN_2_NAME, &can_stm32_init,
+		    &can_stm32_dev_data_2, &can_stm32_cfg_2,
+		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+		    &can_api_funcs);
+
+static void config_can_2_irq(CAN_TypeDef *can)
+{
+	LOG_DBG("Enable CAN2 IRQ");
+#ifdef CONFIG_SOC_SERIES_STM32F0X
+	IRQ_CONNECT(DT_CAN_2_IRQ, DT_CAN_2_IRQ_PRIORITY, can_stm32_isr,
+		    DEVICE_GET(can_stm32_2), 0);
+	irq_enable(DT_CAN_2_IRQ);
+#else
+	IRQ_CONNECT(DT_CAN_2_IRQ_RX0, DT_CAN_2_IRQ_PRIORITY,
+		    can_stm32_rx_isr, DEVICE_GET(can_stm32_2), 0);
+	irq_enable(DT_CAN_2_IRQ_RX0);
+
+	IRQ_CONNECT(DT_CAN_2_IRQ_TX, DT_CAN_2_IRQ_PRIORITY,
+		    can_stm32_tx_isr, DEVICE_GET(can_stm32_2), 0);
+	irq_enable(DT_CAN_2_IRQ_TX);
+
+	IRQ_CONNECT(DT_CAN_2_IRQ_SCE, DT_CAN_2_IRQ_PRIORITY,
+		    can_stm32_tx_isr, DEVICE_GET(can_stm32_2), 0);
+	irq_enable(DT_CAN_2_IRQ_SCE);
+#endif
+	can->IER |= CAN_IT_TME | CAN_IT_ERR | CAN_IT_FMP0 | CAN_IT_FMP1;
+}
+
+#endif /*CONFIG_CAN_2*/
+

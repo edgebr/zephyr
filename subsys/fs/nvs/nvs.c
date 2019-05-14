@@ -14,6 +14,9 @@
 #include "nvs_priv.h"
 
 #include <logging/log.h>
+
+#define STM32F4_SYSTEM_MEMORY_REGION 0x180000
+
 LOG_MODULE_REGISTER(fs_nvs, CONFIG_NVS_LOG_LEVEL);
 
 
@@ -324,6 +327,7 @@ static int nvs_prev_ate(struct nvs_fs *fs, u32_t *addr, struct nvs_ate *ate)
 {
 	int rc;
 	struct nvs_ate close_ate, end_ate;
+    u32_t mask;
 	u32_t data_end_addr, ate_end_addr;
 	size_t ate_size;
 
@@ -334,7 +338,10 @@ static int nvs_prev_ate(struct nvs_fs *fs, u32_t *addr, struct nvs_ate *ate)
 		return rc;
 	}
 
-	*addr += ate_size;
+    mask = (((STM32F4_SYSTEM_MEMORY_REGION - fs->offset) / (fs->sector_size)) << ADDR_SECT_SHIFT);
+ 
+    *addr = (*addr + ate_size) % mask;
+
 	if (((*addr) & ADDR_OFFS_MASK) != (fs->sector_size - ate_size)) {
 		return 0;
 	}

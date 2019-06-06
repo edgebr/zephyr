@@ -14,6 +14,12 @@ menuconfig SHELL_BACKENDS
 
 if SHELL_BACKENDS
 
+config UART_SHELL_PROMPT
+	string "Prompt to be showed at the shell"
+	default "uart~$ "
+	help
+	  This option specifies the rompt to be showed at the shell.
+	  
 config SHELL_BACKEND_SERIAL
 	bool "Enable serial backends."
 	default y

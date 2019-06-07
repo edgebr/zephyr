@@ -7,13 +7,14 @@
 #ifndef ZEPHYR_INCLUDE_NVS_NVS_H_
 #define ZEPHYR_INCLUDE_NVS_NVS_H_
 
+#include <sys/types.h>
+#include <kernel.h>
+#include <device.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <sys/types.h>
-#include <kernel.h>
-#include <device.h>
 /**
  * @brief Non-volatile Storage
  * @defgroup nvs Non-volatile Storage
@@ -47,7 +48,7 @@ struct nvs_fs {
 	off_t offset;		/* filesystem offset in flash */
 	u32_t ate_wra;		/* next alloc table entry write address */
 	u32_t data_wra;		/* next data write address */
-	u16_t sector_size;	/* filesystem is divided into sectors,
+	u32_t sector_size;	/* filesystem is divided into sectors,
 				 * sector size should be multiple of pagesize
 				 */
 	u16_t sector_count;	/* amount of sectors in the filesystem */

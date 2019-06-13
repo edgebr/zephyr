@@ -17,11 +17,13 @@
 #include <soc.h>
 #include <rtc.h>
 
+// CONFIG_SOC_SERIES_STM32F0X added by victorrsoliveira
 #if defined(CONFIG_SOC_SERIES_STM32L4X)
 #define EXTI_LINE	LL_EXTI_LINE_18
 #elif defined(CONFIG_SOC_SERIES_STM32F4X) \
 	|| defined(CONFIG_SOC_SERIES_STM32F3X)	\
-	|| defined(CONFIG_SOC_SERIES_STM32F7X)
+	|| defined(CONFIG_SOC_SERIES_STM32F7X)	\
+	|| defined(CONFIG_SOC_SERIES_STM32F0X)
 #define EXTI_LINE	LL_EXTI_LINE_17
 #endif
 
@@ -299,7 +301,8 @@ static const struct rtc_driver_api rtc_api = {
 		.get_pending_int = rtc_stm32_get_pending_int,
 };
 
-DEVICE_AND_API_INIT(rtc_stm32, CONFIG_RTC_0_NAME, &rtc_stm32_init,
+// CONFIG_RTC_0_NAME modified to DT_RTC_0_NAME - victorrsoliveira
+DEVICE_AND_API_INIT(rtc_stm32, DT_RTC_0_NAME, &rtc_stm32_init,
 		    &rtc_data, &rtc_config, PRE_KERNEL_1,
 		    CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &rtc_api);
 

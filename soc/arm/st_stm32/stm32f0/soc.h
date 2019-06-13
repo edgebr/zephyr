@@ -43,6 +43,14 @@
 #include <stm32f0xx_ll_system.h>
 #endif /* CONFIG_CLOCK_CONTROL_STM32_CUBE */
 
+// added by victorrsoliveira for testing RTC implementation
+#if defined(CONFIG_RTC_STM32) || defined(CONFIG_COUNTER_RTC_STM32)
+#include <stm32f0xx_ll_rtc.h>
+#include <stm32f0xx_ll_pwr.h>
+#include <stm32f0xx_ll_rcc.h>
+#include <stm32f0xx_ll_exti.h>
+#endif
+
 #ifdef CONFIG_IWDG_STM32
 #include <stm32f0xx_ll_iwdg.h>
 #endif

@@ -338,7 +338,7 @@ static const struct rtc_stm32_config rtc_config = {
 #if defined(CONFIG_COUNTER_RTC_STM32_CLOCK_LSI)
 		/* prescaler values for LSI @ 32 KHz */
 		.AsynchPrescaler = 0x7F,
-		.SynchPrescaler = 0x00F9,
+		.SynchPrescaler = 0x0136,
 #else /* CONFIG_COUNTER_RTC_STM32_CLOCK_LSE */
 		/* prescaler values for LSE @ 32768 Hz */
 		.AsynchPrescaler = 0x7F,

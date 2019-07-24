@@ -222,11 +222,11 @@ static int bme680_sample_fetch(struct device *dev, enum sensor_channel chan)
 	}
 
 	/* Trigger the next measurement */
-	ret = bme680_reg_write(data, BME680_REG_CTRL_MEAS,
-			       BME680_CTRL_MEAS_VAL);
-	if (ret < 0) {
-		return ret;
-	}
+	/*ret = bme680_reg_write(data, BME680_REG_CTRL_MEAS,*/
+				   /*BME680_CTRL_MEAS_VAL);*/
+	/*if (ret < 0) {*/
+		/*return ret;*/
+	/*}*/
 
 	return 0;
 }

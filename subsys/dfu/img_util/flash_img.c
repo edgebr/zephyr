@@ -22,7 +22,7 @@ BUILD_ASSERT_MSG((CONFIG_IMG_BLOCK_BUF_SIZE % DT_FLASH_WRITE_BLOCK_SIZE == 0),
 		 "CONFIG_IMG_BLOCK_BUF_SIZE is not a multiple of "
 		 "DT_FLASH_WRITE_BLOCK_SIZE");
 
-static bool flash_verify(const struct flash_area *fa, off_t offset,
+static int flash_verify(const struct flash_area *fa, off_t offset,
 			 u8_t *data, size_t len)
 {
 	size_t size;
@@ -81,7 +81,7 @@ static int flash_sync(struct flash_img_context *ctx)
 }
 
 int flash_img_buffered_write(struct flash_img_context *ctx, u8_t *data,
-			     size_t len, bool flush)
+			     size_t len, int flush)
 {
 	int processed = 0;
 	int rc = 0;

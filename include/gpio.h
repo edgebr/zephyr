@@ -55,8 +55,7 @@ struct gpio_callback;
  * another private structure.
  */
 typedef void (*gpio_callback_handler_t)(struct device *port,
-					struct gpio_callback *cb,
-					u32_t pins);
+					struct gpio_callback *cb, u32_t pins);
 
 /**
  * @brief GPIO callback structure
@@ -93,20 +92,17 @@ struct gpio_callback {
  *
  * (Internal use only.)
  */
-typedef int (*gpio_config_t)(struct device *port, int access_op,
-			     u32_t pin, int flags);
-typedef int (*gpio_write_t)(struct device *port, int access_op,
-			    u32_t pin, u32_t value);
-typedef int (*gpio_read_t)(struct device *port, int access_op,
-			   u32_t pin, u32_t *value);
+typedef int (*gpio_config_t)(struct device *port, int access_op, u32_t pin,
+			     int flags);
+typedef int (*gpio_write_t)(struct device *port, int access_op, u32_t pin,
+			    u32_t value);
+typedef int (*gpio_read_t)(struct device *port, int access_op, u32_t pin,
+			   u32_t *value);
 typedef int (*gpio_manage_callback_t)(struct device *port,
-				      struct gpio_callback *callback,
-				      bool set);
-typedef int (*gpio_enable_callback_t)(struct device *port,
-				      int access_op,
+				      struct gpio_callback *callback, bool set);
+typedef int (*gpio_enable_callback_t)(struct device *port, int access_op,
 				      u32_t pin);
-typedef int (*gpio_disable_callback_t)(struct device *port,
-				       int access_op,
+typedef int (*gpio_disable_callback_t)(struct device *port, int access_op,
 				       u32_t pin);
 typedef u32_t (*gpio_api_get_pending_int)(struct device *dev);
 
@@ -124,7 +120,7 @@ __syscall int gpio_config(struct device *port, int access_op, u32_t pin,
 			  int flags);
 
 static inline int z_impl_gpio_config(struct device *port, int access_op,
-				    u32_t pin, int flags)
+				     u32_t pin, int flags)
 {
 	const struct gpio_driver_api *api =
 		(const struct gpio_driver_api *)port->driver_api;
@@ -136,7 +132,7 @@ __syscall int gpio_write(struct device *port, int access_op, u32_t pin,
 			 u32_t value);
 
 static inline int z_impl_gpio_write(struct device *port, int access_op,
-				   u32_t pin, u32_t value)
+				    u32_t pin, u32_t value)
 {
 	const struct gpio_driver_api *api =
 		(const struct gpio_driver_api *)port->driver_api;
@@ -148,7 +144,7 @@ __syscall int gpio_read(struct device *port, int access_op, u32_t pin,
 			u32_t *value);
 
 static inline int z_impl_gpio_read(struct device *port, int access_op,
-				  u32_t pin, u32_t *value)
+				   u32_t pin, u32_t *value)
 {
 	const struct gpio_driver_api *api =
 		(const struct gpio_driver_api *)port->driver_api;
@@ -160,7 +156,7 @@ __syscall int gpio_enable_callback(struct device *port, int access_op,
 				   u32_t pin);
 
 static inline int z_impl_gpio_enable_callback(struct device *port,
-					     int access_op, u32_t pin)
+					      int access_op, u32_t pin)
 {
 	const struct gpio_driver_api *api =
 		(const struct gpio_driver_api *)port->driver_api;
@@ -176,7 +172,7 @@ __syscall int gpio_disable_callback(struct device *port, int access_op,
 				    u32_t pin);
 
 static inline int z_impl_gpio_disable_callback(struct device *port,
-					      int access_op, u32_t pin)
+					       int access_op, u32_t pin)
 {
 	const struct gpio_driver_api *api =
 		(const struct gpio_driver_api *)port->driver_api;
@@ -198,8 +194,7 @@ static inline int z_impl_gpio_disable_callback(struct device *port,
  * @param flags Flags for pin configuration. IN/OUT, interrupt ...
  * @return 0 if successful, negative errno code on failure.
  */
-static inline int gpio_pin_configure(struct device *port, u32_t pin,
-				     int flags)
+static inline int gpio_pin_configure(struct device *port, u32_t pin, int flags)
 {
 	return gpio_config(port, GPIO_ACCESS_BY_PIN, pin, flags);
 }
@@ -211,8 +206,7 @@ static inline int gpio_pin_configure(struct device *port, u32_t pin,
  * @param value Value set on the pin.
  * @return 0 if successful, negative errno code on failure.
  */
-static inline int gpio_pin_write(struct device *port, u32_t pin,
-				 u32_t value)
+static inline int gpio_pin_write(struct device *port, u32_t pin, u32_t value)
 {
 	return gpio_write(port, GPIO_ACCESS_BY_PIN, pin, value);
 }
@@ -227,8 +221,7 @@ static inline int gpio_pin_write(struct device *port, u32_t pin,
  * @param value Integer pointer to receive the data values from the pin.
  * @return 0 if successful, negative errno code on failure.
  */
-static inline int gpio_pin_read(struct device *port, u32_t pin,
-				u32_t *value)
+static inline int gpio_pin_read(struct device *port, u32_t pin, u32_t *value)
 {
 	return gpio_read(port, GPIO_ACCESS_BY_PIN, pin, value);
 }
@@ -339,7 +332,7 @@ static inline int gpio_pin_disable_callback(struct device *port, u32_t pin)
  * @return 0 if successful, negative errno code on failure.
  */
 __deprecated static inline int gpio_port_configure(struct device *port,
-		int flags)
+						   int flags)
 {
 	return gpio_config(port, GPIO_ACCESS_BY_PORT, 0, flags);
 }
@@ -440,26 +433,22 @@ struct gpio_pin_config {
 	u32_t gpio_pin;
 };
 
-#define GPIO_DECLARE_PIN_CONFIG_IDX(_idx)	\
-	struct gpio_pin_config gpio_pin_ ##_idx
-#define GPIO_DECLARE_PIN_CONFIG		\
-	GPIO_DECLARE_PIN_CONFIG_IDX()
+#define GPIO_DECLARE_PIN_CONFIG_IDX(_idx) struct gpio_pin_config gpio_pin_##_idx
+#define GPIO_DECLARE_PIN_CONFIG GPIO_DECLARE_PIN_CONFIG_IDX()
 
-#define GPIO_PIN_IDX(_idx, _controller, _pin)	\
-	.gpio_pin_ ##_idx = {			\
-		.gpio_controller = (_controller),\
-		.gpio_pin = (_pin),		\
+#define GPIO_PIN_IDX(_idx, _controller, _pin)                                  \
+	.gpio_pin_##_idx = {                                                   \
+		.gpio_controller = (_controller),                              \
+		.gpio_pin = (_pin),                                            \
 	}
-#define GPIO_PIN(_controller, _pin)		\
-	GPIO_PIN_IDX(, _controller, _pin)
+#define GPIO_PIN(_controller, _pin) GPIO_PIN_IDX(, _controller, _pin)
 
-#define GPIO_GET_CONTROLLER_IDX(_idx, _conf)	\
-	((_conf)->gpio_pin_ ##_idx.gpio_controller)
-#define GPIO_GET_PIN_IDX(_idx, _conf)	\
-	((_conf)->gpio_pin_ ##_idx.gpio_pin)
+#define GPIO_GET_CONTROLLER_IDX(_idx, _conf)                                   \
+	((_conf)->gpio_pin_##_idx.gpio_controller)
+#define GPIO_GET_PIN_IDX(_idx, _conf) ((_conf)->gpio_pin_##_idx.gpio_pin)
 
-#define GPIO_GET_CONTROLLER(_conf)	GPIO_GET_CONTROLLER_IDX(, _conf)
-#define GPIO_GET_PIN(_conf)		GPIO_GET_PIN_IDX(, _conf)
+#define GPIO_GET_CONTROLLER(_conf) GPIO_GET_CONTROLLER_IDX(, _conf)
+#define GPIO_GET_PIN(_conf) GPIO_GET_PIN_IDX(, _conf)
 
 /**
  * @}

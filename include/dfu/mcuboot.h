@@ -13,6 +13,10 @@
 
 #include <zephyr/types.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /** Attempt to boot the contents of slot 0. */
 #define BOOT_SWAP_TYPE_NONE     1
 
@@ -38,10 +42,10 @@
  * represents the information it contains.
  */
 struct mcuboot_img_sem_ver {
-	u8_t major;
-	u8_t minor;
-	u16_t revision;
-	u32_t build_num;
+    u8_t major;
+    u8_t minor;
+    u16_t revision;
+    u32_t build_num;
 };
 
 /**
@@ -54,10 +58,10 @@ struct mcuboot_img_sem_ver {
  * to applications is omitted.
  */
 struct mcuboot_img_header_v1 {
-	/** The size of the image, in bytes. */
-	u32_t image_size;
-	/** The image version. */
-	struct mcuboot_img_sem_ver sem_ver;
+    /** The size of the image, in bytes. */
+    u32_t image_size;
+    /** The image version. */
+    struct mcuboot_img_sem_ver sem_ver;
 };
 
 /**
@@ -72,21 +76,21 @@ struct mcuboot_img_header_v1 {
  * the header.)
  */
 struct mcuboot_img_header {
-	/**
-	 * The version of MCUboot the header is built for.
-	 *
-	 * The value 1 corresponds to MCUboot versions 1.x.y.
-	 */
-	u32_t mcuboot_version;
-	/**
-	 * The header information. It is only valid to access fields
-	 * in the union member corresponding to the mcuboot_version
-	 * field above.
-	 */
-	union {
-		/** Header information for MCUboot version 1. */
-		struct mcuboot_img_header_v1 v1;
-	} h;
+    /**
+     * The version of MCUboot the header is built for.
+     *
+     * The value 1 corresponds to MCUboot versions 1.x.y.
+     */
+    u32_t mcuboot_version;
+    /**
+     * The header information. It is only valid to access fields
+     * in the union member corresponding to the mcuboot_version
+     * field above.
+     */
+    union {
+        /** Header information for MCUboot version 1. */
+        struct mcuboot_img_header_v1 v1;
+    } h;
 };
 
 /**
@@ -104,8 +108,8 @@ struct mcuboot_img_header {
  * @return Zero on success, a negative value on error.
  */
 int boot_read_bank_header(u8_t area_id,
-			  struct mcuboot_img_header *header,
-			  size_t header_size);
+                          struct mcuboot_img_header *header,
+                          size_t header_size);
 
 /**
  * @brief Check if the currently running image is confirmed as OK.
@@ -164,5 +168,9 @@ int boot_request_upgrade(int permanent);
  * @return 0 on success, negative errno code on fail.
  */
 int boot_erase_img_bank(u8_t area_id);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  /* ZEPHYR_INCLUDE_DFU_MCUBOOT_H_ */

@@ -65,6 +65,7 @@ void can_stm32_rx_isr_handler(CAN_TypeDef *can, struct can_stm32_data *data)
 		filter_match_index = ((mbox->RDTR & CAN_RDT0R_FMI)
 					   >> CAN_RDT0R_FMI_Pos);
 
+		filter_match_index = 0;
 		if (filter_match_index >= CONFIG_CAN_MAX_FILTER) {
 			break;
 		}

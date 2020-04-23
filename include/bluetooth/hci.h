@@ -701,6 +701,9 @@ struct bt_hci_rp_read_rssi {
 	s8_t  rssi;
 } __packed;
 
+#define BT_HCI_ENCRYPTION_KEY_SIZE_MIN          7
+#define BT_HCI_ENCRYPTION_KEY_SIZE_MAX          16
+
 #define BT_HCI_OP_READ_ENCRYPTION_KEY_SIZE      BT_OP(BT_OGF_STATUS, 0x0008)
 struct bt_hci_cp_read_encryption_key_size {
 	u16_t handle;
@@ -1355,6 +1358,7 @@ struct bt_hci_cp_le_set_privacy_mode {
 
 /* Event definitions */
 
+#define BT_HCI_EVT_UNKNOWN                      0x00
 #define BT_HCI_EVT_VENDOR                       0xff
 
 #define BT_HCI_EVT_INQUIRY_COMPLETE             0x01

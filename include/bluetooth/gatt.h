@@ -971,9 +971,14 @@ typedef u8_t (*bt_gatt_read_func_t)(struct bt_conn *conn, u8_t err,
  *  @param handle_count If equals to 1 single.handle and single.offset
  *                      are used.  If >1 Read Multiple Characteristic
  *                      Values is performed and handles are used.
+ *                      If equals to 0 by_uuid is used for Read Using
+ *                      Characteristic UUID.
  *  @param handle Attribute handle
  *  @param offset Attribute data offset
  *  @param handles Handles to read in Read Multiple Characteristic Values
+ *  @param start_handle First requested handle number
+ *  @param end_handle Last requested handle number
+ *  @param uuid 2 or 16 octet UUID
  */
 struct bt_gatt_read_params {
 	struct bt_att_req _req;
@@ -985,12 +990,25 @@ struct bt_gatt_read_params {
 			u16_t offset;
 		} single;
 		u16_t *handles;
+		struct {
+			u16_t start_handle;
+			u16_t end_handle;
+			struct bt_uuid *uuid;
+		} by_uuid;
 	};
 };
 
 /** @brief Read Attribute Value by handle
  *
  *  This procedure read the attribute value and return it to the callback.
+ *
+ *  When reading attributes by UUID the callback can be called multiple times
+ *  depending on how many instances of given the UUID exists with the
+ *  start_handle being updated for each instance.
+ *
+ *  If an instance does contain a long value which cannot be read entirely the
+ *  caller will need to read the remaining data separately using the handle and
+ *  offset.
  *
  *  Note: This procedure is asynchronous therefore the parameters need to
  *  remains valid while it is active.
@@ -1114,7 +1132,16 @@ enum {
 	 * when the client reconnects, it will have to
 	 * issue a new subscription.
 	 */
-	BT_GATT_SUBSCRIBE_FLAG_VOLATILE = BIT(0),
+	BT_GATT_SUBSCRIBE_FLAG_VOLATILE,
+
+	/** Write pending flag
+	 *
+	 * If set, indicates write operation is pending waiting remote end to
+	 * respond.
+	 */
+	BT_GATT_SUBSCRIBE_FLAG_WRITE_PENDING,
+
+	BT_GATT_SUBSCRIBE_NUM_FLAGS
 };
 
 /** @brief GATT Subscribe parameters */
@@ -1130,7 +1157,8 @@ struct bt_gatt_subscribe_params {
 	/** Subscribe value */
 	u16_t value;
 	/** Subscription flags */
-	u8_t flags;
+	ATOMIC_DEFINE(flags, BT_GATT_SUBSCRIBE_NUM_FLAGS);
+
 	sys_snode_t node;
 };
 

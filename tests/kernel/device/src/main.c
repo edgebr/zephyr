@@ -12,6 +12,7 @@
 
 #define DUMMY_PORT_1    "dummy"
 #define DUMMY_PORT_2    "dummy_driver"
+#define BAD_DRIVER	"bad_driver"
 
 /**
  * @brief Test cases to verify device objects
@@ -46,6 +47,12 @@ void test_dummy_device(void)
 
 	device_busy_set(dev);
 	device_busy_clear(dev);
+
+	/* device_get_binding() returns false for device object
+	 * with failed init.
+	 */
+	dev = device_get_binding(BAD_DRIVER);
+	zassert_true((dev == NULL), NULL);
 }
 
 /**
@@ -169,7 +176,7 @@ void test_main(void)
 			 ztest_unit_test(test_dummy_device_pm),
 			 ztest_unit_test(build_suspend_device_list),
 			 ztest_unit_test(test_dummy_device),
-			 ztest_unit_test(test_bogus_dynamic_name),
-			 ztest_unit_test(test_dynamic_name));
+			 ztest_user_unit_test(test_bogus_dynamic_name),
+			 ztest_user_unit_test(test_dynamic_name));
 	ztest_run_test_suite(device);
 }

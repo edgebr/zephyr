@@ -207,7 +207,7 @@ struct _k_object_assignment {
  */
 void z_object_init(void *obj);
 #else
-
+/* LCOV_EXCL_START */
 #define K_THREAD_ACCESS_GRANT(thread, ...)
 
 /**
@@ -250,6 +250,7 @@ static inline void k_object_access_all_grant(void *object)
 {
 	ARG_UNUSED(object);
 }
+/* LCOV_EXCL_STOP */
 #endif /* !CONFIG_USERSPACE */
 
 /**
@@ -326,6 +327,7 @@ __syscall void *k_object_alloc(enum k_objects otype);
  */
 void k_object_free(void *obj);
 #else
+/* LCOV_EXCL_START */
 static inline void *z_impl_k_object_alloc(enum k_objects otype)
 {
 	ARG_UNUSED(otype);
@@ -337,6 +339,7 @@ static inline void k_obj_free(void *obj)
 {
 	ARG_UNUSED(obj);
 }
+/* LCOV_EXCL_STOP */
 #endif /* CONFIG_DYNAMIC_OBJECTS */
 
 /** @} */
@@ -537,7 +540,7 @@ struct k_thread {
 
 #if defined(CONFIG_THREAD_NAME)
 	/* Thread name */
-	const char *name;
+	char name[CONFIG_THREAD_MAX_NAME_LEN];
 #endif
 
 #ifdef CONFIG_THREAD_CUSTOM_DATA
@@ -1260,8 +1263,14 @@ __syscall void *k_thread_custom_data_get(void);
  * Set the name of the thread to be used when THREAD_MONITOR is enabled for
  * tracing and debugging.
  *
+ * @param thread_id Thread to set name, or NULL to set the current thread
+ * @param value Name string
+ * @retval 0 on success
+ * @retval -EFAULT Memory access error with supplied string
+ * @retval -ENOSYS Thread name configuration option not enabled
+ * @retval -EINVAL Thread name too long
  */
-__syscall void k_thread_name_set(k_tid_t thread_id, const char *value);
+__syscall int k_thread_name_set(k_tid_t thread_id, const char *value);
 
 /**
  * @brief Get thread name
@@ -1269,9 +1278,23 @@ __syscall void k_thread_name_set(k_tid_t thread_id, const char *value);
  * Get the name of a thread
  *
  * @param thread_id Thread ID
- *
+ * @retval Thread name, or NULL if configuration not enabled
  */
-__syscall const char *k_thread_name_get(k_tid_t thread_id);
+const char *k_thread_name_get(k_tid_t thread_id);
+
+/**
+ * @brief Copy the thread name into a supplied buffer
+ *
+ * @param thread_id Thread to obtain name information
+ * @param buf Destination buffer
+ * @param size Destinatiomn buffer size
+ * @retval -ENOSPC Destination buffer too small
+ * @retval -EFAULT Memory access error
+ * @retval -ENOSYS Thread name feature not enabled
+ * @retval 0 Success
+ */
+__syscall int k_thread_name_copy(k_tid_t thread_id, char *buf,
+				 size_t size);
 
 /**
  * @}
@@ -1653,22 +1676,26 @@ void k_disable_sys_clock_always_on(void);
 /**
  * @brief Get system uptime (32-bit version).
  *
- * This routine returns the lower 32-bits of the elapsed time since the system
- * booted, in milliseconds.
+ * This routine returns the lower 32 bits of the system uptime in
+ * milliseconds.
  *
- * This routine can be more efficient than k_uptime_get(), as it reduces the
- * need for interrupt locking and 64-bit math. However, the 32-bit result
- * cannot hold a system uptime time larger than approximately 50 days, so the
- * caller must handle possible rollovers.
+ * Because correct conversion requires full precision of the system
+ * clock there is no benefit to using this over k_uptime_get() unless
+ * you know the application will never run long enough for the system
+ * clock to approach 2^32 ticks.  Calls to this function may involve
+ * interrupt blocking and 64-bit math.
  *
  * @note While this function returns time in milliseconds, it does not mean it
  * has millisecond resolution. The actual resolution depends on
  * :option:`CONFIG_SYS_CLOCK_TICKS_PER_SEC` config option, and with the default
  * setting of 100, system time is updated in increments of 10ms.
  *
- * @return Current uptime in milliseconds.
+ * @return The low 32 bits of the current uptime, in milliseconds.
  */
-__syscall u32_t k_uptime_get_32(void);
+static inline u32_t k_uptime_get_32(void)
+{
+	return (u32_t)k_uptime_get();
+}
 
 /**
  * @brief Get elapsed time.
@@ -4010,13 +4037,13 @@ struct k_mem_pool {
  * @req K-MPOOL-001
  */
 #define K_MEM_POOL_DEFINE(name, minsz, maxsz, nmax, align)		\
-	char __aligned(align) _mpool_buf_##name[_ALIGN4(maxsz * nmax)	\
+	char __aligned(align) _mpool_buf_##name[_ALIGN4(maxsz) * nmax	\
 				  + _MPOOL_BITS_SIZE(maxsz, minsz, nmax)]; \
 	struct sys_mem_pool_lvl _mpool_lvls_##name[Z_MPOOL_LVLS(maxsz, minsz)]; \
 	struct k_mem_pool name __in_section(_k_mem_pool, static, name) = { \
 		.base = {						\
 			.buf = _mpool_buf_##name,			\
-			.max_sz = maxsz,				\
+			.max_sz = _ALIGN4(maxsz),			\
 			.n_max = nmax,					\
 			.n_levels = Z_MPOOL_LVLS(maxsz, minsz),		\
 			.levels = _mpool_lvls_##name,			\

@@ -709,6 +709,7 @@ static int sdhc_detect(struct sdhc_data *data)
 	sdhc_retry_init(&retry, SDHC_INIT_TIMEOUT, SDHC_RETRY_DELAY);
 
 	/* Synchronise with the card by sending it to idle */
+	// printk("[sdhc] Synchronise with the card by sending it to idle...\n");
 	do {
 		err = sdhc_go_idle(data);
 		if (err == 0) {
@@ -724,12 +725,14 @@ static int sdhc_detect(struct sdhc_data *data)
 	} while (true);
 
 	/* Enable CRC mode */
+	// printk("[sdhc] Enable CRC mode\n");
 	err = sdhc_cmd_r1_idle(data, SDHC_CRC_ON_OFF, 1);
 	if (err != 0) {
 		return err;
 	}
 
 	/* Wait for the card to leave idle state */
+	// printk("[sdhc] Wait for the card to leave idle state...\n");
 	do {
 		sdhc_cmd_r1_raw(data, SDHC_APP_CMD, 0);
 
@@ -998,12 +1001,14 @@ static int disk_sdhc_access_init(struct disk_info *disk)
 	struct sdhc_data *data = dev->driver_data;
 	int err;
 
-	if (data->status == DISK_STATUS_OK) {
-		/* Called twice, don't re-init. */
-		return 0;
-	}
+	// if (data->status == DISK_STATUS_OK) {
+	// 	/* Called twice, don't re-init. */
+	// 	return 0;
+	// }
 
+	printk("[sdhc] sdhc_detect...\n");
 	err = sdhc_detect(data);
+	printk("[sdhc] sdhc_detec end: %d\n", err);
 	sdhc_set_cs(data, 1);
 
 	return err;

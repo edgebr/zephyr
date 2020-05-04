@@ -75,7 +75,7 @@ LOG_MODULE_REGISTER(sdhc, CONFIG_DISK_LOG_LEVEL);
 #define SDHC_MIN_TRIES 20
 #define SDHC_RETRY_DELAY K_MSEC(20)
 /* Time to wait for the card to initialise */
-#define SDHC_INIT_TIMEOUT K_MSEC(5000)
+#define SDHC_INIT_TIMEOUT K_MSEC(500)
 /* Time to wait for the card to respond or come ready */
 #define SDHC_READY_TIMEOUT K_MSEC(500)
 

@@ -1006,9 +1006,9 @@ static int disk_sdhc_access_init(struct disk_info *disk)
 	// 	return 0;
 	// }
 
-	printk("[sdhc] sdhc_detect...\n");
+	// printk("[sdhc] sdhc_detect...\n");
 	err = sdhc_detect(data);
-	printk("[sdhc] sdhc_detec end: %d\n", err);
+	// printk("[sdhc] sdhc_detec end: %d\n", err);
 	sdhc_set_cs(data, 1);
 
 	return err;

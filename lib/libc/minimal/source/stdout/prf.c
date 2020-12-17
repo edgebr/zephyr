@@ -14,7 +14,7 @@
 #include <ctype.h>
 
 #ifndef MAXFLD
-#define	MAXFLD	200
+#define	MAXFLD	300
 #endif
 
 #ifndef EOF

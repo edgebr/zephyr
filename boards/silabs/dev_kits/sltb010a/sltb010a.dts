@@ -13,6 +13,7 @@
 	/* These aliases are provided for compatibility with samples */
 	aliases {
 		led0 = &led0;
+		pwm-led0 = &pwm_led0;
 		sw0 = &button0;
 		spi0 = &usart0;
 		watchdog0 = &wdog0;
@@ -24,6 +25,14 @@
 	chosen {
 		zephyr,code-partition = &slot0_partition;
 		zephyr,bt-hci = &bt_hci_silabs;
+	};
+
+	pwmleds {
+		compatible = "pwm-leds";
+		status = "okay";
+		pwm_led0: pwm_led0 {
+			pwms = <&pwm0 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
+		};
 	};
 };
 
@@ -62,4 +71,13 @@
 
 &bt_hci_silabs {
 	status = "okay";
+};
+
+&timer0 {
+	status = "okay";
+
+	pwm0: pwm {
+		status = "okay";
+		pin-location = <GECKO_LOCATION(0) GECKO_PORT_A GECKO_PIN(4)>;
+	};
 };

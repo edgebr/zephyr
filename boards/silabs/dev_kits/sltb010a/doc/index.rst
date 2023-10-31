@@ -78,6 +78,8 @@ The sltb010a board configuration supports the following hardware features:
 +-----------+------------+-------------------------------------+
 | RADIO     | on-chip    | bluetooth                           |
 +-----------+------------+-------------------------------------+
+| PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
 
 The default configuration can be found in
 :zephyr_file:`boards/silabs/dev_kits/sltb010a/sltb010a_defconfig`.

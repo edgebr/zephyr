@@ -47,6 +47,7 @@ family:
       - name: efr32bg22
         socs:
           - name: efr32bg22c224f512im40
+          - name: efr32bg22c222f352gm40
       - name: efr32mg24
         socs:
           - name: efr32mg24b220f1536im48

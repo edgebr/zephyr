@@ -33,12 +33,12 @@ LOG_MODULE_REGISTER(net_http_server, CONFIG_NET_HTTP_SERVER_LOG_LEVEL);
 #define THREAD_PRIORITY K_PRIO_PREEMPT(CONFIG_NUM_PREEMPT_PRIORITIES - 1)
 #endif
 
-#define INVALID_SOCK -1
+#define INVALID_SOCK       -1
 #define INACTIVITY_TIMEOUT K_SECONDS(CONFIG_HTTP_SERVER_CLIENT_INACTIVITY_TIMEOUT)
 
 #define HTTP_SERVER_MAX_SERVICES CONFIG_HTTP_SERVER_NUM_SERVICES
 #define HTTP_SERVER_MAX_CLIENTS  CONFIG_HTTP_SERVER_MAX_CLIENTS
-#define HTTP_SERVER_SOCK_COUNT (1 + HTTP_SERVER_MAX_SERVICES + HTTP_SERVER_MAX_CLIENTS)
+#define HTTP_SERVER_SOCK_COUNT   (1 + HTTP_SERVER_MAX_SERVICES + HTTP_SERVER_MAX_CLIENTS)
 
 struct http_server_ctx {
 	int num_clients;
@@ -77,9 +77,7 @@ int http_server_init(struct http_server_ctx *ctx)
 		struct sockaddr *addr;
 		struct sockaddr_in *addr4;
 		struct sockaddr_in6 *addr6;
-	} addr = {
-		.addr = (struct sockaddr *)&addr_storage
-	};
+	} addr = {.addr = (struct sockaddr *)&addr_storage};
 
 	HTTP_SERVICE_COUNT(&svc_count);
 
@@ -142,9 +140,7 @@ int http_server_init(struct http_server_ctx *ctx)
 		}
 
 		/* Create a socket */
-		if (COND_CODE_1(CONFIG_NET_SOCKETS_SOCKOPT_TLS,
-				(svc->sec_tag_list != NULL),
-				(0))) {
+		if (COND_CODE_1(CONFIG_NET_SOCKETS_SOCKOPT_TLS, (svc->sec_tag_list != NULL), (0))) {
 			proto = IPPROTO_TLS_1_2;
 		} else {
 			proto = IPPROTO_TCP;
@@ -159,8 +155,7 @@ int http_server_init(struct http_server_ctx *ctx)
 
 #if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
 		if (svc->sec_tag_list != NULL) {
-			if (zsock_setsockopt(fd, SOL_TLS, TLS_SEC_TAG_LIST,
-					     svc->sec_tag_list,
+			if (zsock_setsockopt(fd, SOL_TLS, TLS_SEC_TAG_LIST, svc->sec_tag_list,
 					     svc->sec_tag_list_size) < 0) {
 				LOG_ERR("setsockopt: %d", errno);
 				zsock_close(fd);
@@ -176,8 +171,7 @@ int http_server_init(struct http_server_ctx *ctx)
 		}
 #endif
 
-		if (zsock_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &(int){1},
-				     sizeof(int)) < 0) {
+		if (zsock_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0) {
 			LOG_ERR("setsockopt: %d", errno);
 			zsock_close(fd);
 			continue;
@@ -265,8 +259,7 @@ static void close_all_sockets(struct http_server_ctx *ctx)
 		if (i < ctx->listen_fds) {
 			zsock_close(ctx->fds[i].fd);
 		} else {
-			struct http_client_ctx *client =
-				&server_ctx.clients[i - ctx->listen_fds];
+			struct http_client_ctx *client = &server_ctx.clients[i - ctx->listen_fds];
 
 			close_client_connection(client);
 		}
@@ -280,6 +273,8 @@ static void client_release_resources(struct http_client_ctx *client)
 	struct http_resource_detail *detail;
 	struct http_resource_detail_dynamic *dynamic_detail;
 
+	LOG_WRN("Releasing client resources...");
+
 	HTTP_SERVICE_FOREACH(service) {
 		HTTP_SERVICE_FOREACH_RESOURCE(service, resource) {
 			detail = resource->detail;
@@ -290,7 +285,15 @@ static void client_release_resources(struct http_client_ctx *client)
 
 			dynamic_detail = (struct http_resource_detail_dynamic *)detail;
 
+			LOG_WRN("service: %s, %p", resource->resource, dynamic_detail->holder);
+
 			if (dynamic_detail->holder != client) {
+				if (dynamic_detail->complete == client &&
+				    dynamic_detail->cb != NULL) {
+					dynamic_detail->cb(client, HTTP_SERVER_DATA_COMPLETE, NULL,
+							   0, dynamic_detail->user_data);
+				}
+
 				continue;
 			}
 
@@ -304,8 +307,9 @@ static void client_release_resources(struct http_client_ctx *client)
 				continue;
 			}
 
-			dynamic_detail->cb(client, HTTP_SERVER_DATA_ABORTED,
-					   NULL, 0, dynamic_detail->user_data);
+			LOG_WRN("Send abort to %p", dynamic_detail->cb);
+			dynamic_detail->cb(client, HTTP_SERVER_DATA_ABORTED, NULL, 0,
+					   dynamic_detail->user_data);
 		}
 	}
 }
@@ -523,8 +527,7 @@ static int http_server_run(struct http_server_ctx *ctx)
 
 			if (ctx->fds[i].revents & ZSOCK_POLLHUP) {
 				if (i >= ctx->listen_fds) {
-					LOG_DBG("Client #%d has disconnected",
-						i - ctx->listen_fds);
+					LOG_DBG("Client #%d has disconnected", i - ctx->listen_fds);
 
 					client = &ctx->clients[i - ctx->listen_fds];
 					close_client_connection(client);
@@ -534,8 +537,8 @@ static int http_server_run(struct http_server_ctx *ctx)
 			}
 
 			if (ctx->fds[i].revents & ZSOCK_POLLERR) {
-				(void)zsock_getsockopt(ctx->fds[i].fd, SOL_SOCKET,
-						       SO_ERROR, &sock_error, &optlen);
+				(void)zsock_getsockopt(ctx->fds[i].fd, SOL_SOCKET, SO_ERROR,
+						       &sock_error, &optlen);
 				LOG_DBG("Error on fd %d %d", ctx->fds[i].fd, sock_error);
 
 				if (i >= ctx->listen_fds) {
@@ -548,7 +551,6 @@ static int http_server_run(struct http_server_ctx *ctx)
 				LOG_ERR("Listening socket error, aborting.");
 				ret = -sock_error;
 				goto closing;
-
 			}
 
 			if (!(ctx->fds[i].revents & ZSOCK_POLLIN)) {
@@ -677,9 +679,7 @@ static bool skip_this(struct http_resource_desc *resource, bool is_websocket)
 	return false;
 }
 
-struct http_resource_detail *get_resource_detail(const char *path,
-						 int *path_len,
-						 bool is_websocket)
+struct http_resource_detail *get_resource_detail(const char *path, int *path_len, bool is_websocket)
 {
 	HTTP_SERVICE_FOREACH(service) {
 		HTTP_SERVICE_FOREACH_RESOURCE(service, resource) {
@@ -828,5 +828,5 @@ again:
 	}
 }
 
-K_THREAD_DEFINE(http_server_tid, CONFIG_HTTP_SERVER_STACK_SIZE,
-		http_server_thread, NULL, NULL, NULL, THREAD_PRIORITY, 0, 0);
+K_THREAD_DEFINE(http_server_tid, CONFIG_HTTP_SERVER_STACK_SIZE, http_server_thread, NULL, NULL,
+		NULL, THREAD_PRIORITY, 0, 0);

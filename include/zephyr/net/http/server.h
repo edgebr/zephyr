@@ -96,9 +96,9 @@ struct http_resource_detail {
 };
 
 /** @cond INTERNAL_HIDDEN */
-BUILD_ASSERT(NUM_BITS(
-	     sizeof(((struct http_resource_detail *)0)->bitmask_of_supported_http_methods))
-	     >= (HTTP_METHOD_END_VALUE - 1));
+BUILD_ASSERT(
+	NUM_BITS(sizeof(((struct http_resource_detail *)0)->bitmask_of_supported_http_methods)) >=
+	(HTTP_METHOD_END_VALUE - 1));
 /** @endcond */
 
 /**
@@ -144,9 +144,9 @@ struct http_content_type {
 
 #define HTTP_SERVER_CONTENT_TYPE(_extension, _content_type)                                        \
 	const STRUCT_SECTION_ITERABLE(http_content_type, _extension) = {                           \
-		.extension = STRINGIFY(_extension),                                                \
-		.extension_len = sizeof(STRINGIFY(_extension)) - 1,                                \
-		.content_type = _content_type,                                                     \
+		.extension = STRINGIFY(_extension), .extension_len =                               \
+							    sizeof(STRINGIFY(_extension)) - 1,     \
+								   .content_type = _content_type,  \
 	};
 
 #define HTTP_SERVER_CONTENT_TYPE_FOREACH(_it) STRUCT_SECTION_FOREACH(http_content_type, _it)
@@ -161,6 +161,8 @@ enum http_data_status {
 	HTTP_SERVER_DATA_MORE = 0,
 	/** Final data fragment in current transaction. */
 	HTTP_SERVER_DATA_FINAL = 1,
+	/** TODO */
+	HTTP_SERVER_DATA_COMPLETE = 2,
 };
 
 /**
@@ -180,10 +182,8 @@ enum http_data_status {
  *         <0 error, close the connection.
  */
 typedef int (*http_resource_dynamic_cb_t)(struct http_client_ctx *client,
-					  enum http_data_status status,
-					  uint8_t *data_buffer,
-					  size_t data_len,
-					  void *user_data);
+					  enum http_data_status status, uint8_t *data_buffer,
+					  size_t data_len, void *user_data);
 
 /**
  * @brief Representation of a dynamic server resource.
@@ -196,6 +196,11 @@ struct http_resource_detail_dynamic {
 	 *  application.
 	 */
 	http_resource_dynamic_cb_t cb;
+
+	/** TODO
+	 *
+	 */
+	struct http_client_ctx *complete;
 
 	/** Data buffer used to exchanged data between server and the,
 	 *  application.
@@ -232,8 +237,7 @@ BUILD_ASSERT(offsetof(struct http_resource_detail_dynamic, common) == 0);
  *            to send and receive data to/from the supplied socket.
  *         <0 error, close the connection.
  */
-typedef int (*http_resource_websocket_cb_t)(int ws_socket,
-					    void *user_data);
+typedef int (*http_resource_websocket_cb_t)(int ws_socket, void *user_data);
 
 /** @brief Representation of a websocket server resource */
 struct http_resource_detail_websocket {
@@ -303,30 +307,30 @@ enum http1_parser_state {
 };
 
 #define HTTP_SERVER_INITIAL_WINDOW_SIZE 65536
-#define HTTP_SERVER_WS_MAX_SEC_KEY_LEN 32
+#define HTTP_SERVER_WS_MAX_SEC_KEY_LEN  32
 
 /** @endcond */
 
 /** @brief HTTP/2 stream representation. */
 struct http2_stream_ctx {
-	int stream_id; /**< Stream identifier. */
+	int stream_id;                        /**< Stream identifier. */
 	enum http2_stream_state stream_state; /**< Stream state. */
-	int window_size; /**< Stream-level window size. */
+	int window_size;                      /**< Stream-level window size. */
 
 	/** Flag indicating that headers were sent in the reply. */
-	bool headers_sent : 1;
+	bool headers_sent: 1;
 
 	/** Flag indicating that END_STREAM flag was sent. */
-	bool end_stream_sent : 1;
+	bool end_stream_sent: 1;
 };
 
 /** @brief HTTP/2 frame representation. */
 struct http2_frame {
-	uint32_t length; /**< Frame payload length. */
+	uint32_t length;            /**< Frame payload length. */
 	uint32_t stream_identifier; /**< Stream ID the frame belongs to. */
-	uint8_t type; /**< Frame type. */
-	uint8_t flags; /**< Frame flags. */
-	uint8_t padding_len; /**< Frame padding length. */
+	uint8_t type;               /**< Frame type. */
+	uint8_t flags;              /**< Frame flags. */
+	uint8_t padding_len;        /**< Frame padding length. */
 };
 
 /**
@@ -400,31 +404,31 @@ struct http_client_ctx {
 	 */
 	struct k_work_delayable inactivity_timer;
 
-/** @cond INTERNAL_HIDDEN */
+	/** @cond INTERNAL_HIDDEN */
 	/** Websocket security key. */
 	IF_ENABLED(CONFIG_WEBSOCKET, (uint8_t ws_sec_key[HTTP_SERVER_WS_MAX_SEC_KEY_LEN]));
-/** @endcond */
+	/** @endcond */
 
 	/** Flag indicating that HTTP2 preface was sent. */
-	bool preface_sent : 1;
+	bool preface_sent: 1;
 
 	/** Flag indicating that HTTP1 headers were sent. */
-	bool http1_headers_sent : 1;
+	bool http1_headers_sent: 1;
 
 	/** Flag indicating that upgrade header was present in the request. */
-	bool has_upgrade_header : 1;
+	bool has_upgrade_header: 1;
 
 	/** Flag indicating HTTP/2 upgrade takes place. */
-	bool http2_upgrade : 1;
+	bool http2_upgrade: 1;
 
 	/** Flag indicating Websocket upgrade takes place. */
-	bool websocket_upgrade : 1;
+	bool websocket_upgrade: 1;
 
 	/** Flag indicating Websocket key is being processed. */
-	bool websocket_sec_key_next : 1;
+	bool websocket_sec_key_next: 1;
 
 	/** The next frame on the stream is expectd to be a continuation frame. */
-	bool expect_continuation : 1;
+	bool expect_continuation: 1;
 };
 
 /** @brief Start the HTTP2 server.

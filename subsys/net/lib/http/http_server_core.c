@@ -273,8 +273,6 @@ static void client_release_resources(struct http_client_ctx *client)
 	struct http_resource_detail *detail;
 	struct http_resource_detail_dynamic *dynamic_detail;
 
-	LOG_WRN("Releasing client resources...");
-
 	HTTP_SERVICE_FOREACH(service) {
 		HTTP_SERVICE_FOREACH_RESOURCE(service, resource) {
 			detail = resource->detail;
@@ -284,8 +282,6 @@ static void client_release_resources(struct http_client_ctx *client)
 			}
 
 			dynamic_detail = (struct http_resource_detail_dynamic *)detail;
-
-			LOG_WRN("service: %s, %p", resource->resource, dynamic_detail->holder);
 
 			if (dynamic_detail->holder != client) {
 				if (dynamic_detail->complete == client &&

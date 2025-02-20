@@ -9,14 +9,11 @@ toolchain:
   - gnuarmemb
   - xtools
 supported:
+  - bluetooth
   - counter
   - gpio
   - uart
   - i2c
   - spi
   - pwm
-testing:
-  ignore_tags:
-    - net
-    - bluetooth
 vendor: silabs

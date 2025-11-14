@@ -26,3 +26,43 @@ config UDC_MCHP_G1_THREAD_PRIORITY
 	  Device controller driver thread priority.
 
 endif # UDC_MCHP_G1
+
+config UDC_MCHP_SAM
+	bool "Microchip SAM UDPHS USB Device High Speed Port"
+	default y
+	depends on DT_HAS_MICROCHIP_SAM_UDPHS_ENABLED
+	select PINCTRL
+	select GPIO
+	select SYS_MEM_BLOCKS
+	select EVENTS
+	select UDC_DRIVER_HAS_HIGH_SPEED_SUPPORT
+	help
+	  Enable the Microchip SAM UDPHS driver.
+
+if UDC_MCHP_SAM
+
+config UDC_MCHP_SAM_STACK_SIZE
+	int "UDC controller driver internal thread stack size"
+	default 1024
+	help
+	  Device controller driver internal thread stack size.
+
+config UDC_MCHP_SAM_THREAD_PRI
+	int "UDC controller driver thread priority"
+	default 8
+	help
+	  Device controller driver thread priority.
+
+config UDC_MCHP_SAM_DMA
+	bool "DMA support"
+	default y
+	help
+	  Enable DMA transfer, otherwise data will be transferred via FIFO.
+
+config UDC_MCHP_SAM_BURST_LOCK
+	bool "Lock bus access for maximum bandwidth"
+	help
+	  USB packets system data bursts will be locked for
+	  maximum optimization of the bus bandwidth usage.
+
+endif # UDC_MCHP_SAM

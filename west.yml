@@ -23,6 +23,8 @@ manifest:
       url-base: https://github.com/zephyrproject-rtos
     - name: babblesim
       url-base: https://github.com/BabbleSim
+    - name: hexagon
+      url-base: https://github.com/hexagon-geo-surv
 
   group-filter: [-babblesim, -optional, -testing]
 
@@ -324,13 +326,15 @@ manifest:
       revision: 85aa60d18b3d5e5588d7b247abf90198f07c8a63
       path: modules/lib/gui/lvgl
     - name: mbedtls
-      revision: a3e190fe44c78d1ba67f55979e1257328cc7d0d8
+      revision: 15f0b88e50d5acc28b074c9cee384f701b8ecece # zephyr_mbedtls_v4.1.0-catfish
       path: modules/crypto/mbedtls
+      remote: hexagon
       groups:
         - crypto
     - name: mbedtls-3.6 # Required for TF-M build until we bump it to v2.3
       repo-path: mbedtls
-      revision: a00e23de17b6b0a0de28e180cb186da6f0008836
+      revision: 20880fc951bfc7784051b03ff894763260315723 # zephyr_mbedtls_v3.6.6-catfish
+      remote: hexagon
       path: modules/crypto/mbedtls-3.6
       groups:
         - crypto

@@ -19,7 +19,7 @@
 #define RP2_GPIO_OVERRIDE_LOW    2
 #define RP2_GPIO_OVERRIDE_HIGH   3
 
-#define RP2XXX_PINMUX(pin_num, alt_func) \
+#define RP2XXX_PINMUX(pin_num, alt_func)                                                           \
 	(((pin_num) << RP2_PIN_NUM_POS) | ((alt_func) << RP2_ALT_FUNC_POS))
 
 /* These function are common. SoC-specific functions are defined in their

@@ -412,6 +412,9 @@
 			clocks = <&clocks RPI_PICO_CLKID_CLK_SYS>;
 			resets = <&reset RPI_PICO_RESETS_RESET_PIO0>;
 			status = "disabled";
+			interrupts = <7 RPI_PICO_DEFAULT_IRQ_PRIORITY>,
+				    <8 RPI_PICO_DEFAULT_IRQ_PRIORITY>;
+			interrupt-names = "irq0", "irq1";
 		};
 
 		pio1: pio@50300000 {
@@ -420,6 +423,9 @@
 			clocks = <&clocks RPI_PICO_CLKID_CLK_SYS>;
 			resets = <&reset RPI_PICO_RESETS_RESET_PIO1>;
 			status = "disabled";
+			interrupts = <9 RPI_PICO_DEFAULT_IRQ_PRIORITY>,
+				    <10 RPI_PICO_DEFAULT_IRQ_PRIORITY>;
+			interrupt-names = "irq0", "irq1";
 		};
 
 		rtc: rtc@4005c000 {

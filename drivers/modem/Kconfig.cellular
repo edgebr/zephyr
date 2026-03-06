@@ -44,7 +44,39 @@ if MODEM_CELLULAR
 config MODEM_CELLULAR_APN
 	string "APN"
 	default "internet"
+	
+config MODEM_CELLULAR_APN_USERNAME
+	string "Username for apn cellular network"
+	default ""
+	help
+	  Username for cellular network. This is used in the AT+QICSGP command
+	  for Quectel modems and may be used in other places for other modems.
+	  If your modem doesn't require a username, leave this blank.
 
+config MODEM_CELLULAR_APN_PASSWORD
+	string "Password for apn cellular network"
+	default ""
+	help
+	  Password for apn cellular network. This is used in the AT+QICSGP command
+	  for Quectel modems and may be used in other places for other modems.
+	  If your modem doesn't require a password, leave this blank.
+
+config MODEM_CELLULAR_SERVER_HOST
+	string "Server address for cellular network"
+	default ""
+	help
+	  Server address for cellular network. This is used in the AT+QICSGP command
+	  for Quectel modems and may be used in other places for other modems.
+	  If your modem doesn't require a server address, leave this blank.
+
+config MODEM_CELLULAR_SERVER_PORT
+	int "Server port for cellular network"
+	default 36585
+	help
+	  Server port for cellular network. This is used in the AT+QICSGP command
+	  for Quectel modems and may be used in other places for other modems.
+	  If your modem doesn't require a server port, leave this as 0.
+	
 config MODEM_CELLULAR_PERIODIC_SCRIPT_MS
 	int "Periodic script interval in milliseconds"
 	default 2000

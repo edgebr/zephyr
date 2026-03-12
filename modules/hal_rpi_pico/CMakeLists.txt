@@ -93,6 +93,7 @@ if(CONFIG_HAS_RPI_PICO)
     ${rp2_common_dir}/hardware_watchdog/include
     ${rp2_common_dir}/hardware_powman/include
     ${rp2_common_dir}/hardware_xosc/include
+    ${rp2_common_dir}/hardware_vreg/include
     ${rp2_common_dir}/pico_bootrom/include
     ${rp2_common_dir}/pico_flash/include
     ${rp2_common_dir}/pico_platform_common/include

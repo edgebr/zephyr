@@ -43,8 +43,8 @@ if(CONFIG_HAS_RPI_PICO)
       BUILD_ALWAYS TRUE
       )
 
-      zephyr_library_add_dependencies(second_stage_bootloader)
-      zephyr_library_sources(${rp2_bootloader_asm})
+    zephyr_library_add_dependencies(second_stage_bootloader)
+    zephyr_library_sources(${rp2_bootloader_asm})
   endif()
 
   if(CONFIG_SOC_SERIES_RP2040)
@@ -63,8 +63,14 @@ if(CONFIG_HAS_RPI_PICO)
     ${rp2_common_dir}/hardware_xosc/xosc.c
     ${rp2_common_dir}/hardware_sync_spin_lock/sync_spin_lock.c
     ${rp2_common_dir}/hardware_ticks/ticks.c
+    ${rp2_common_dir}/hardware_powman/powman.c
     ${rp2_common_dir}/pico_bootrom/bootrom.c
+    ${rp2_common_dir}/pico_aon_timer/aon_timer.c
+    ${rp2_common_dir}/pico_runtime_init/runtime_init.c
+    ${rp2_common_dir}/pico_runtime_init/runtime_init_stack_guard.c
+    ${rp2_common_dir}/pico_runtime_init/runtime_init_clocks.c
     ${rp2xxx_dir}/pico_platform/platform.c
+    ${common_dir}/pico_util/datetime.c
   )
 
   zephyr_include_directories(
@@ -85,6 +91,7 @@ if(CONFIG_HAS_RPI_PICO)
     ${rp2_common_dir}/hardware_ticks/include
     ${rp2_common_dir}/hardware_timer/include
     ${rp2_common_dir}/hardware_watchdog/include
+    ${rp2_common_dir}/hardware_powman/include
     ${rp2_common_dir}/hardware_xosc/include
     ${rp2_common_dir}/pico_bootrom/include
     ${rp2_common_dir}/pico_flash/include
@@ -92,6 +99,10 @@ if(CONFIG_HAS_RPI_PICO)
     ${rp2_common_dir}/pico_platform_compiler/include
     ${rp2_common_dir}/pico_platform_panic/include
     ${rp2_common_dir}/pico_platform_sections/include
+    ${rp2_common_dir}/pico_aon_timer/include
+    ${common_dir}/boot_picoboot_headers/include
+    ${common_dir}/pico_util/include
+    ${common_dir}/boot_picobin_headers/include
     ${rp2xxx_dir}/hardware_regs/include
     ${rp2xxx_dir}/hardware_structs/include
     ${rp2xxx_dir}/pico_platform/include

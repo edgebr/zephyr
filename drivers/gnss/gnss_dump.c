@@ -10,6 +10,8 @@
 #include <zephyr/logging/log.h>
 
 #include <string.h>
+/* CONFIG_GNSS_DUMP_TO_LOG NOT SURE HOW IS THIS GETTING ACTIVATED, @moeda */
+#undef CONFIG_GNSS_DUMP_TO_LOG
 
 #if CONFIG_GNSS_DUMP_TO_LOG
 static char dump_buf[CONFIG_GNSS_DUMP_TO_LOG_BUF_SIZE];
@@ -101,15 +103,11 @@ int gnss_dump_nav_data(char *str, uint16_t strsize, const struct navigation_data
 	char *lon_sign = nav_data->longitude < 0 ? "-" : "";
 	char *alt_sign = nav_data->altitude < 0 ? "-" : "";
 
-	ret = snprintk(str, strsize, fmt,
-		       lat_sign,
-		       llabs(nav_data->latitude) / 1000000000,
-		       llabs(nav_data->latitude) % 1000000000,
-		       lon_sign,
+	ret = snprintk(str, strsize, fmt, lat_sign, llabs(nav_data->latitude) / 1000000000,
+		       llabs(nav_data->latitude) % 1000000000, lon_sign,
 		       llabs(nav_data->longitude) / 1000000000,
-		       llabs(nav_data->longitude) % 1000000000,
-		       nav_data->bearing / 1000, nav_data->bearing % 1000,
-		       nav_data->speed / 1000, nav_data->speed % 1000,
+		       llabs(nav_data->longitude) % 1000000000, nav_data->bearing / 1000,
+		       nav_data->bearing % 1000, nav_data->speed / 1000, nav_data->speed % 1000,
 		       alt_sign, abs(nav_data->altitude) / 1000, abs(nav_data->altitude) % 1000);
 
 	return (strsize < ret) ? -ENOMEM : 0;
@@ -121,8 +119,8 @@ int gnss_dump_time(char *str, uint16_t strsize, const struct gnss_time *utc)
 	const char *fmt = "gnss_time: {hour: %u, minute: %u, millisecond %u, month_day %u, "
 			  "month: %u, century_year: %u}";
 
-	ret = snprintk(str, strsize, fmt, utc->hour, utc->minute, utc->millisecond,
-		       utc->month_day, utc->month, utc->century_year);
+	ret = snprintk(str, strsize, fmt, utc->hour, utc->minute, utc->millisecond, utc->month_day,
+		       utc->month, utc->century_year);
 
 	return (strsize < ret) ? -ENOMEM : 0;
 }
@@ -142,7 +140,7 @@ int gnss_dump_satellite(char *str, uint16_t strsize, const struct gnss_satellite
 }
 #endif
 
-#if CONFIG_GNSS_DUMP_TO_LOG
+#if (CONFIG_GNSS_DUMP_TO_LOG)
 static void gnss_dump_data_to_log(const struct device *dev, const struct gnss_data *data)
 {
 	if (gnss_dump_info(dump_buf, sizeof(dump_buf), &data->info) < 0) {

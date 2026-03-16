@@ -78,7 +78,9 @@ class TitleMaxLengthRevert(LineRule):
     name = "title-max-length-no-revert"
     id = "UC5"
     target = CommitMessageTitle
-    options_spec = [IntOption('line-length', 75, "Max line length")]
+    # options_spec = [IntOption('line-length', 75, "Max line length")]
+    # Increased from 75 to 95 to accommodate Microchip labels in commit titles
+    options_spec = [IntOption('line-length', 95, "Max line length")]
     violation_message = "Commit title exceeds max length ({0}>{1})"
 
     def validate(self, line, _commit):

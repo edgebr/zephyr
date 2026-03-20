@@ -1,0 +1,25 @@
+# Copyright (c) 2025-2026 Microchip Technology Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+title: Microchip Flash G2
+
+description: |
+  Microchip G2 driver for Flash
+
+  Group g2 NVMCTRL driver supports following hardware peripherals:
+    - module name="NVMCTRL" id="03929" version="1a0"
+
+compatible: "microchip,flash-g2"
+
+include: soc-nv-flash.yaml
+
+properties:
+  unsupported-region:
+    type: array
+    description: array of unaddressable regions in the given flash area
+  data-flash-start-addr:
+    type: int
+    description: starting address of data flash region
+  user-row-start-addr:
+    type: int
+    description: starting address of user-row flash region

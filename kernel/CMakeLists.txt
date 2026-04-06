@@ -110,6 +110,7 @@ kernel_sources_ifdef(CONFIG_MULTITHREADING
   sched.c
   sleep.c
   pipe.c
+  scheduler.c
   )
 
 if(CONFIG_MULTITHREADING)

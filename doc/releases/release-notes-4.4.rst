@@ -80,6 +80,10 @@ Major enhancements with this release include:
   A new context switch implementation for ARM Cortex-M, enabled via
   :kconfig:option:`CONFIG_USE_SWITCH`, delivers significant performance improvements.
 
+**NAND flash support**
+  Added a new Flash Translation Layer (FTL) disk driver providing wear leveling and bad block
+  management, enabling NAND flash memories to be utilized as standard disk devices.
+
 **Developer experience improvements**
   This release adds several new tools and improvements to development and testing workflows:
 
@@ -133,9 +137,16 @@ The following CVEs are addressed by this release:
 
 * :cve:`2026-5067` Under embargo until 2026-05-23
 
+* :cve:`2026-5068` Under embargo until 2026-05-21
+
 * :cve:`2026-5071` Under embargo until 2026-05-18
 
 * :cve:`2026-5072` Under embargo until 2026-05-18
+
+* :cve:`2026-5589` Under embargo until 2026-06-03
+
+* :cve:`2026-5590` `Zephyr project bug tracker GHSA-4vqm-pw24-g9jp
+  <https://github.com/zephyrproject-rtos/zephyr/security/advisories/GHSA-4vqm-pw24-g9jp>`_
 
 API Changes
 ***********
@@ -409,6 +420,10 @@ New APIs and options
   * :dtcompatible:`jedec,mspi-nor` now allows MSPI configuration of read, write and
     control commands separately via devicetree.
 
+  * Added extended operations to the flash API to support marking blocks as bad
+    (:c:enum:`FLASH_EX_OP_MARK_BAD_BLOCK`) and checking if a block is bad
+    (:c:enum:`FLASH_EX_OP_IS_BAD_BLOCK`).
+
 * Haptics
 
   * Added error callback to API
@@ -484,6 +499,12 @@ New APIs and options
   * Wi-Fi
 
     * Add support for Wi-Fi Direct (P2P) mode.
+    * Add support for WEP (Wired Equivalent Privacy) security. This is disabled by default
+      but can be enabled by :kconfig:option:`CONFIG_WIFI_NM_WPA_SUPPLICANT_WEP`
+    * Use PSA crypto by default instead of legacy one. This can be controlled by
+      :kconfig:option:`CONFIG_WIFI_NM_WPA_SUPPLICANT_CRYPTO_MBEDTLS_PSA` option.
+    * :kconfig:option:`CONFIG_WIFI_NM_WPA_SUPPLICANT_CLEANUP_INTERVAL`
+    * :kconfig:option:`CONFIG_WIFI_NM_HOSTAPD_CLEANUP_INTERVAL`
 
 * OTP
 

@@ -10,12 +10,19 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/net/mdio.h>
 #include <zephyr/logging/log.h>
+#include "../eth_mchp_gmac_g1_hal.h"
 
 LOG_MODULE_REGISTER(mdio_mchp_gmac_g1, CONFIG_MDIO_LOG_LEVEL);
 
 #define DT_DRV_COMPAT microchip_gmac_g1_mdio
 
-#define MDIO_MCHP_OP_TIMEOUT 25
+/*
+ * Bumped from 25 (the upstream SAM value). On PIC32CK a single MDIO frame
+ * at the default MDC divider takes longer than one busy-wait iteration, so
+ * 25 iterations timed out before the KSZ8081 could even ack the first
+ * transaction, making the PHY appear absent at boot.
+ */
+#define MDIO_MCHP_OP_TIMEOUT 500
 
 struct mdio_clock_config {
 	const struct device *clock_dev;
@@ -249,6 +256,19 @@ static int mdio_mchp_initialize(const struct device *dev)
 	if (mck_divisor < 0) {
 		return mck_divisor;
 	}
+
+#if defined(CONFIG_SOC_FAMILY_MICROCHIP_PIC32CK_SG_GC)
+	/*
+	 * The MDIO driver on PIC32CK shares the GMAC register block with the
+	 * Ethernet driver, but runs first in the init order. It therefore
+	 * has to enable the ETH wrapper itself (reads/writes below return
+	 * reset values otherwise) and turn on the Management Port so that
+	 * issuing MDC/MDIO transactions actually pokes the PHY. On SAM
+	 * variants the GMAC is not wrapped and MPE is enabled elsewhere.
+	 */
+	cfg->gmac_regs->ETH_CTRLA |= ETH_CTRLA_ENABLE_Msk;
+	cfg->gmac_regs->GMAC_NCR |= GMAC_NCR_MPE_Msk;
+#endif
 
 	cfg->gmac_regs->GMAC_NCFGR &=
 		~(GMAC_NCFGR_CLK_MCK8 | GMAC_NCFGR_CLK_MCK16 | GMAC_NCFGR_CLK_MCK32 |

@@ -1,0 +1,8 @@
+# Copyright (c) 2026 Microchip Technology Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+description: Microchip KSZ8091 Ethernet PHY device
+
+compatible: "microchip,ksz8091"
+
+include: microchip,ksz8081.yaml

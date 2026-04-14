@@ -19,6 +19,16 @@
 
 LOG_MODULE_REGISTER(i2c_mchp_sercom_g1, CONFIG_I2C_LOG_LEVEL);
 
+#if defined(CONFIG_SOC_FAMILY_MICROCHIP_PIC32CK_SG_GC) &&                                          \
+	!defined(SERCOM_I2CM_STATUS_BUSSTATE_IDLE_Val)
+#define SERCOM_I2CM_STATUS_BUSSTATE_IDLE_Val 1U
+#define SERCOM_I2CM_STATUS_BUSSTATE_BUSY_Val 3U
+#define SERCOM_I2CM_STATUS_BUSSTATE_IDLE                                                           \
+	SERCOM_I2CM_STATUS_BUSSTATE(SERCOM_I2CM_STATUS_BUSSTATE_IDLE_Val)
+#define SERCOM_I2CM_STATUS_BUSSTATE_BUSY                                                           \
+	SERCOM_I2CM_STATUS_BUSSTATE(SERCOM_I2CM_STATUS_BUSSTATE_BUSY_Val)
+#endif
+
 #include "i2c-priv.h"
 
 #define I2C_MCHP_SUCCESS                    0
@@ -1787,13 +1797,13 @@ static int i2c_mchp_init(const struct device *dev)
 	int retval;
 
 	retval = clock_control_on(cfg->i2c_clock.clock_dev, cfg->i2c_clock.gclk_sys);
-	if (retval != I2C_MCHP_SUCCESS) {
+	if ((retval != I2C_MCHP_SUCCESS) && (retval != -EALREADY)) {
 		LOG_ERR("Failed to enable GCLK_SYS clock: %d", retval);
 		return retval;
 	}
 
 	retval = clock_control_on(cfg->i2c_clock.clock_dev, cfg->i2c_clock.mclk_sys);
-	if (retval != I2C_MCHP_SUCCESS) {
+	if ((retval != I2C_MCHP_SUCCESS) && (retval != -EALREADY)) {
 		LOG_ERR("Failed to enable main clock: %d", retval);
 		return retval;
 	}

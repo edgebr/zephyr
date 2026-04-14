@@ -192,6 +192,58 @@ an ip address by typing:
     $ ping -I eth1 192.0.2.10
 
 
+PIC32CK SG01 Curiosity Ultra
+============================
+
+These are instructions for how to use this sample application running on
+:zephyr:board:`pic32ck_sg01_cult` to negotiate an IPv4 address from a DHCPv4
+server on the host network. The board uses its on-board KSZ8091 PHY and the
+AT24MAC402 EEPROM to supply the MAC address, so no overlay or extra build flags
+are needed.
+
+Connect the board's **DEBUG USB** port to the host for power, flashing and the
+serial console, then connect the RJ45 port either to a network with a DHCPv4
+server or directly to a host interface that will run one.
+
+For direct host testing, configure the host Ethernet interface and DHCPv4
+server as in the FRDM_K64F example above, replacing ``eth1`` with the host
+interface connected to the board.
+
+Build and flash the sample:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/net/dhcpv4_client
+   :host-os: unix
+   :board: pic32ck_sg01_cult
+   :goals: build flash
+   :compact:
+
+Open the serial console on the board's virtual COM port at 115200 baud. On
+Linux this is typically ``/dev/ttyACM0`` and on macOS it is typically a
+``/dev/cu.usbmodem*`` device.
+
+Once DHCPv4 address negotiation completes, output looks like this:
+
+.. code-block:: console
+
+    [00:00:00.000,000] <inf> phy_mii: PHY (0) Link speed 100 Mb, full duplex
+    [00:00:00.000,000] <inf> eth_mchp_gmac_g1: MAC xx:xx:xx:xx:xx:xx
+    [00:00:00.000,000] <inf> net_dhcpv4_client_sample: Run dhcpv4 client
+    [00:00:00.000,000] <inf> net_dhcpv4_client_sample: Start on ethernet: index=1
+    [00:00:07.080,000] <inf> net_dhcpv4: Received: 192.0.2.10
+    [00:00:07.080,000] <inf> net_dhcpv4_client_sample:    Address[1]: 192.0.2.10
+    [00:00:07.080,000] <inf> net_dhcpv4_client_sample:     Subnet[1]: 255.255.255.0
+    [00:00:07.080,000] <inf> net_dhcpv4_client_sample:     Router[1]: 192.0.2.2
+    [00:00:07.080,000] <inf> net_dhcpv4_client_sample: Lease time[1]: 7200 seconds
+
+To verify connectivity from the host, ping the leased address through the host
+Ethernet interface connected to the board:
+
+.. code-block:: console
+
+    $ ping -I eth1 192.0.2.10
+
+
 Arm FVP
 ========
 

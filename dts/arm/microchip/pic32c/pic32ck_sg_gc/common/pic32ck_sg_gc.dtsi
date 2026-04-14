@@ -244,6 +244,39 @@
 			clock-names = "mclk", "gclk";
 			status = "disabled";
 		};
+
+		ethernet-controller@45022000 {
+			compatible = "microchip,sam-ethernet-controller";
+			reg = <0x45022000 0x1280>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+
+			gmac: ethernet@45022000 {
+				compatible = "microchip,gmac-g1-eth";
+				reg = <0x45022000 0x1280>;
+				interrupts = <145 0>;
+				interrupt-names = "gmac";
+				num-queues = <1>;
+				local-mac-address = [00 00 00 00 00 00];
+				clocks = <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_ETH_AHB>,
+					 <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_ETH_APB>,
+					 <&gclkperiph CLOCK_MCHP_GCLKPERIPH_ID_ETH_TX>;
+				clock-names = "mclk-ahb", "mclk-apb", "gclk-tx";
+				status = "disabled";
+			};
+
+			mdio: mdio@45022000 {
+				compatible = "microchip,gmac-g1-mdio";
+				reg = <0x45022000 0x1280>;
+				clocks = <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_ETH_AHB>,
+					 <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_ETH_APB>;
+				clock-names = "mclk-ahb", "mclk-apb";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+		};
 	};
 };
 

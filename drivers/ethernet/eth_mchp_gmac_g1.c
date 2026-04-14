@@ -16,7 +16,25 @@
 #include <zephyr/drivers/clock_control/mchp_clock_control.h>
 #include <zephyr/types.h>
 #include <zephyr/sys/ring_buffer.h>
+#include <zephyr/cache.h>
 #include "eth.h"
+#include "eth_mchp_gmac_g1_hal.h"
+
+/*
+ * PIC32CK SG01 has a Cortex-M Cache Controller (CMCC) that is not enabled by
+ * the current Zephyr port, but may be enabled in future configs. Without
+ * these hooks the packet buffers would be read/written via CPU cache while
+ * the DMA accesses SRAM directly, causing silent packet corruption the day
+ * the cache is turned on. The macros collapse to no-ops when there is no
+ * data cache, so the cost today is zero.
+ */
+#if defined(CONFIG_DCACHE)
+#define GMAC_DCACHE_CLEAN(addr, size) sys_cache_data_flush_range((void *)(addr), (size))
+#define GMAC_DCACHE_INVALIDATE(addr, size) sys_cache_data_invd_range((void *)(addr), (size))
+#else
+#define GMAC_DCACHE_CLEAN(addr, size)      do { } while (0)
+#define GMAC_DCACHE_INVALIDATE(addr, size) do { } while (0)
+#endif
 
 LOG_MODULE_REGISTER(eth_mchp_gmac_g1, CONFIG_ETHERNET_LOG_LEVEL);
 
@@ -88,9 +106,17 @@ BUILD_ASSERT(ARRAY_SIZE(GMAC->GMAC_TBQBAPQ) + 1 == GMAC_QUEUE_NUM,
 /* Interrupt Status/Enable/Disable/Mask register bit field definitions */
 #define GMAC_INT_RX_ERR_BITS (GMAC_IER_RXUBR_Msk | GMAC_IER_ROVR_Msk)
 #define GMAC_INT_TX_ERR_BITS (GMAC_IER_TUR_Msk | GMAC_IER_RLEX_Msk | GMAC_IER_TFC_Msk)
-#define GMAC_INT_EN_FLAGS                                                                          \
-	(GMAC_IER_RCOMP_Msk | GMAC_INT_RX_ERR_BITS | GMAC_IER_TCOMP_Msk | GMAC_INT_TX_ERR_BITS |   \
-	 GMAC_IER_HRESP_Msk)
+/*
+ * On PIC32CK SG01, the error-status bits in ISR (HRESP, RXUBR, ROVR, TUR,
+ * RLEX, TFC) are latched mirrors of conditions in RSR/TSR and can be set
+ * before link up (residual state from a previous run, unresolved BNA, etc.).
+ * Enabling them would trigger the ISR before the driver has a chance to
+ * clear RSR/TSR, and because the hardware re-sets the ISR bit from RSR/TSR
+ * every cycle, the ISR tail-chains forever and starves every thread.
+ * Keep only the "normal completion" sources here; TX/RX error recovery is
+ * handled by the code paths that actually inspect and clear RSR/TSR.
+ */
+#define GMAC_INT_EN_FLAGS (GMAC_IER_RCOMP_Msk | GMAC_IER_TCOMP_Msk)
 
 #define GMAC_DMA_QUEUE_FLAGS (0)
 
@@ -141,6 +167,14 @@ struct gmac_dev_data {
 	struct net_if *iface;
 	uint8_t mac_addr[6];
 	uint32_t phy_connection_type;
+	/*
+	 * Moved here from a function-static in eth_mchp_iface_init() so the
+	 * guard is tied to the lifetime of this device instance. A
+	 * function-static bool persisted across network stack restarts,
+	 * silently short-circuiting re-initialization when the interface
+	 * needed to come back up.
+	 */
+	bool init_done;
 	bool link_up;
 	struct k_sem rx_int_sem;
 
@@ -157,6 +191,16 @@ struct gmac_clock_config {
 	const struct device *clock_dev;
 	clock_control_subsys_t mclk_apb_sys;
 	clock_control_subsys_t mclk_ahb_sys;
+#if defined(CONFIG_SOC_FAMILY_MICROCHIP_PIC32CK_SG_GC)
+	/*
+	 * PIC32CK gates the MAC transmit clock domain behind a dedicated
+	 * GCLK peripheral channel (separate from AHB/APB). The MAC does not
+	 * transmit a single preamble until this clock is running, so the
+	 * driver has to own its enable — SAM-family variants have no
+	 * equivalent node in DT.
+	 */
+	clock_control_subsys_t gclk_tx_sys;
+#endif
 };
 
 struct gmac_dev_config {
@@ -175,10 +219,18 @@ struct gmac_frame_info {
 	uint16_t num_descriptors;
 };
 
+#if defined(CONFIG_SOC_FAMILY_MICROCHIP_PIC32CK_SG_GC)
+#define ETH_MCHP_CLOCK_DEFN(n)                                                                     \
+	.eth_clock_cfg.clock_dev = DEVICE_DT_GET(DT_NODELABEL(clock)),                             \
+	.eth_clock_cfg.mclk_apb_sys = (void *)DT_INST_CLOCKS_CELL_BY_NAME(n, mclk_apb, subsystem), \
+	.eth_clock_cfg.mclk_ahb_sys = (void *)DT_INST_CLOCKS_CELL_BY_NAME(n, mclk_ahb, subsystem), \
+	.eth_clock_cfg.gclk_tx_sys = (void *)DT_INST_CLOCKS_CELL_BY_NAME(n, gclk_tx, subsystem)
+#else
 #define ETH_MCHP_CLOCK_DEFN(n)                                                                     \
 	.eth_clock_cfg.clock_dev = DEVICE_DT_GET(DT_NODELABEL(clock)),                             \
 	.eth_clock_cfg.mclk_apb_sys = (void *)DT_INST_CLOCKS_CELL_BY_NAME(n, mclk_apb, subsystem), \
 	.eth_clock_cfg.mclk_ahb_sys = (void *)DT_INST_CLOCKS_CELL_BY_NAME(n, mclk_ahb, subsystem)
+#endif
 
 #if (CONFIG_NET_BUF_DATA_SIZE * CONFIG_ETH_MCHP_BUF_RX_COUNT) < GMAC_FRAME_SIZE_MAX
 #error network data fragment not large enough to hold a full frame
@@ -332,7 +384,6 @@ static void gmac_tx_completed(gmac_registers_t *gmac, struct gmac_queue *queue)
 	struct gmac_desc *tx_desc;
 	struct net_buf *frag;
 	uintptr_t ptr;
-
 	__ASSERT(tx_desc_list->buf_desc[tx_desc_list->tail].status & GMAC_TXW1_USED,
 		 "first buffer of a frame is not marked as own by GMAC");
 	while (tx_desc_list->tail != tx_desc_list->head) {
@@ -413,18 +464,66 @@ static int gmac_set_phy_connection_type(const struct device *dev, gmac_registers
 
 static int gmac_init(const struct device *dev, gmac_registers_t *gmac)
 {
+#if defined(CONFIG_SOC_FAMILY_MICROCHIP_PIC32CK_SG_GC)
+	/*
+	 * On PIC32CK the Cadence GMAC core is wrapped by a Microchip "ETH"
+	 * peripheral. Until ETH_CTRLA.ENABLE is set, writes to the inner
+	 * GMAC registers are silently dropped and reads return reset values.
+	 * Every access below (NCFGR, NCR, RSR, ...) depends on this bit.
+	 */
+	gmac->ETH_CTRLA |= ETH_CTRLA_ENABLE_Msk;
+
+	/*
+	 * Start from a quiescent MAC: a warm boot may leave RXEN/TXEN/MPE
+	 * still asserted from the previous image. If we leave them on while
+	 * reconfiguring NCFGR / descriptors / RBQB, the DMA can race with
+	 * the init sequence and set BNA/TFC before we are ready, which
+	 * latches unrecoverable error conditions in RSR/TSR.
+	 */
+	gmac->GMAC_NCR &= ~(GMAC_NCR_RXEN_Msk | GMAC_NCR_TXEN_Msk | GMAC_NCR_MPE_Msk);
+#endif
+
 	gmac->GMAC_NCFGR |= GMAC_NCFGR_MTIHEN_Msk | GMAC_NCFGR_LFERD_Msk | GMAC_NCFGR_RFCS_Msk |
 #ifdef CONFIG_NET_VLAN
 			    GMAC_NCFGR_MAXFS |
 #endif
 			    GMAC_NCFGR_RXCOEN_Msk;
 
+#if defined(CONFIG_SOC_FAMILY_MICROCHIP_PIC32CK_SG_GC)
+	/*
+	 * The PIC32CK NCR reset value already contains statistics-control
+	 * bits that the hardware expects to stay set. An unconditional
+	 * assignment (the SAM path below) wipes them out. Use read/modify
+	 * here to add only CLRSTAT and MPE without disturbing the rest.
+	 */
+	gmac->GMAC_NCR |= GMAC_NCR_CLRSTAT_Msk | GMAC_NCR_MPE_Msk;
+#else
 	gmac->GMAC_NCR = GMAC_NCR_CLRSTAT_Msk | GMAC_NCR_MPE_Msk;
+#endif
 	gmac->GMAC_IDR = UINT32_MAX;
 	(void)gmac->GMAC_ISR;
 	gmac->GMAC_HRB = UINT32_MAX;
 	gmac->GMAC_HRT = UINT32_MAX;
-	gmac->GMAC_RSR = GMAC_RSR_RESETVALUE;
+	/*
+	 * RSR and TSR are write-1-to-clear on PIC32CK. A warm boot leaves
+	 * BNA / REC / RXOVR / HNO (and the TSR equivalents) latched from the
+	 * previous run. If any of those bits is still set when we turn IER
+	 * on a few lines later, the ISR fires immediately with real status
+	 * and no chance to recover — the fix is to scrub them here so the
+	 * MAC starts from a known-clean state.
+	 */
+	gmac->GMAC_RSR = ETH_RSR_BNA_Msk | ETH_RSR_REC_Msk | ETH_RSR_RXOVR_Msk |
+			 ETH_RSR_HNO_Msk;
+	gmac->ETH_TSR = ETH_TSR_UBR_Msk | ETH_TSR_COL_Msk | ETH_TSR_RLE_Msk |
+			ETH_TSR_TFC_Msk | ETH_TSR_TXCOMP_Msk | ETH_TSR_UND_Msk |
+			ETH_TSR_HRESP_Msk;
+	/*
+	 * Clearing the GMAC status bits is not enough: a warm boot can also
+	 * leave the NVIC's pending bit for this IRQ asserted. Without this
+	 * scrub, enabling the IRQ line (done later in irq_enable) would
+	 * dispatch the handler before we have installed any state.
+	 */
+	NVIC_ClearPendingIRQ(DT_INST_IRQ_BY_NAME(0, gmac, irq));
 
 	return gmac_set_phy_connection_type(dev, gmac);
 }
@@ -447,7 +546,32 @@ static void gmac_queue0_isr(gmac_registers_t *gmac, struct gmac_queue *queue)
 	struct gmac_desc *tail_desc;
 	uint32_t isr = gmac->GMAC_ISR;
 
+	/*
+	 * This is the heart of the ISR-storm fix that blocked interrupt mode
+	 * for weeks. Unlike the Cadence GMAC in the SAM family (where reading
+	 * ISR clears it), on PIC32CK SG01 the ISR is write-1-to-clear: a
+	 * plain read returns the status but leaves every bit latched, so the
+	 * NVIC keeps re-dispatching the handler on the same event until all
+	 * threads starve. Writing the value back acknowledges the read.
+	 */
+	gmac->GMAC_ISR = isr;
+
 	LOG_DBG("GMAC_ISR=0x%08x", isr);
+
+	/*
+	 * Even after the ISR acknowledgement above, the hardware regenerates
+	 * the ISR bits on the next cycle from whatever is still live in
+	 * RSR/TSR. Scrub those source registers (also W1C) so the condition
+	 * doesn't immediately re-trigger the same interrupt.
+	 */
+	if (isr & GMAC_INT_RX_ERR_BITS) {
+		gmac->ETH_RSR = ETH_RSR_BNA_Msk | ETH_RSR_REC_Msk | ETH_RSR_RXOVR_Msk;
+	}
+	if (isr & (GMAC_INT_TX_ERR_BITS | GMAC_ISR_TCOMP_Msk)) {
+		gmac->ETH_TSR = ETH_TSR_UBR_Msk | ETH_TSR_COL_Msk | ETH_TSR_RLE_Msk |
+				ETH_TSR_TFC_Msk | ETH_TSR_TXCOMP_Msk | ETH_TSR_UND_Msk |
+				ETH_TSR_HRESP_Msk;
+	}
 
 	if ((isr & GMAC_INT_RX_ERR_BITS) != 0) {
 		queue->err_rx_queue_flushed_count++;
@@ -455,6 +579,14 @@ static void gmac_queue0_isr(gmac_registers_t *gmac, struct gmac_queue *queue)
 		struct gmac_dev_data *dev_data =
 			CONTAINER_OF(queue, struct gmac_dev_data, queue_list[queue->que_idx]);
 
+		/*
+		 * Same reason as the big RSR/TSR scrub above, but scoped to the
+		 * normal-completion path: hand the frame off to the RX thread
+		 * only after RSR.REC has been acknowledged, otherwise RCOMP
+		 * will re-arm on the next cycle and the ISR re-enters before
+		 * the thread has a chance to run.
+		 */
+		gmac->GMAC_RSR = ETH_RSR_REC_Msk | ETH_RSR_BNA_Msk | ETH_RSR_RXOVR_Msk;
 		tail_desc = &rx_desc_list->buf_desc[rx_desc_list->tail];
 		LOG_DBG("rx.w1=0x%08x, tail=%d", tail_desc->status, rx_desc_list->tail);
 		dev_data->rx_queue = queue;
@@ -463,11 +595,16 @@ static void gmac_queue0_isr(gmac_registers_t *gmac, struct gmac_queue *queue)
 		if ((isr & GMAC_INT_TX_ERR_BITS) != 0) {
 			gmac_tx_error_handler(gmac, queue);
 		} else if (isr & GMAC_ISR_TCOMP_Msk) {
+			/*
+			 * TX mirror of the RX scrub above: TSR.TXCOMP remains
+			 * latched after ISR acknowledgement and will re-assert
+			 * TCOMP on the very next cycle, queuing another TX
+			 * completion that never happened.
+			 */
+			gmac->ETH_TSR = ETH_TSR_TXCOMP_Msk;
 			tail_desc = &tx_desc_list->buf_desc[tx_desc_list->tail];
 			LOG_DBG("tx.w1=0x%08x, tail=%d", tail_desc->status, tx_desc_list->tail);
 			gmac_tx_completed(gmac, queue);
-		} else {
-			/* To avoid Sonar Issue */
 		}
 	}
 
@@ -612,6 +749,14 @@ static struct net_pkt *gmac_extract_and_replace_buffers(struct gmac_queue *queue
 		} else {
 			frag_len = CONFIG_NET_BUF_DATA_SIZE;
 		}
+		/*
+		 * The DMA has just filled this buffer over AHB; if the core
+		 * ever runs with CMCC enabled, the CPU would see a stale line
+		 * from before the DMA write and hand a garbage packet up to
+		 * the network stack. Invalidating here is the standard
+		 * "DMA-producer, CPU-consumer" handshake.
+		 */
+		GMAC_DCACHE_INVALIDATE(frag_data, frag_len);
 
 		frame_len += frag_len;
 		new_frag = net_pkt_get_frag(rx_pkt, CONFIG_NET_BUF_DATA_SIZE, K_NO_WAIT);
@@ -647,6 +792,15 @@ static struct net_pkt *gmac_extract_and_replace_buffers(struct gmac_queue *queue
 		rx_desc->status = 0U;
 		rx_desc->addr &= (~GMAC_RXW0_ADDR) & (~GMAC_RXW0_OWNERSHIP);
 		rx_desc->addr |= ((uint32_t)frag->data & GMAC_RXW0_ADDR);
+		/*
+		 * net_pkt_get_frag() can hand us a buffer whose cache line is
+		 * dirty from a previous owner. If we leave it as-is, the CPU
+		 * might write that stale line back to SRAM after the DMA has
+		 * already started filling the buffer, silently corrupting the
+		 * next received frame. Invalidate up-front so the CPU has no
+		 * in-flight writes pending.
+		 */
+		GMAC_DCACHE_INVALIDATE(frag->data, CONFIG_NET_BUF_DATA_SIZE);
 		MODULO_INC(tail, rx_desc_list->len);
 		rx_desc = &rx_desc_list->buf_desc[tail];
 	}
@@ -716,6 +870,7 @@ static void gmac_rx(gmac_registers_t *gmac_regs, struct gmac_queue *queue)
 			}
 		}
 
+		pkts_processed++;
 		if (net_recv_data(dev_data->iface, rx_pkt) < 0) {
 #if defined(CONFIG_NET_STATISTICS_ETHERNET)
 			dev_data->stats.error_details.rx_frame_errors++;
@@ -727,14 +882,14 @@ static void gmac_rx(gmac_registers_t *gmac_regs, struct gmac_queue *queue)
 
 static void gmac_rx_thread(void *arg1, void *unused1, void *unused2)
 {
-	int res;
 	struct device *dev = (struct device *)arg1;
 	struct gmac_dev_data *dev_data = dev->data;
 	const struct gmac_dev_config *const cfg = dev->config;
 	gmac_registers_t *gmac_regs = cfg->regs;
 
 	while (1) {
-		res = k_sem_take(&dev_data->rx_int_sem, K_MSEC(ETH_MCHP_RX_PKT_WAIT_TIMEOUT_MS));
+		int res = k_sem_take(&dev_data->rx_int_sem,
+				     K_MSEC(ETH_MCHP_RX_PKT_WAIT_TIMEOUT_MS));
 		if (res == 0) {
 			struct gmac_queue *queue = dev_data->rx_queue;
 
@@ -770,6 +925,7 @@ static int eth_mchp_send(const struct device *dev, struct net_pkt *pkt)
 	const struct gmac_dev_config *const cfg = dev->config;
 	struct gmac_dev_data *const dev_data = dev->data;
 	gmac_registers_t *const gmac_regs = cfg->regs;
+
 	struct gmac_queue *queue;
 	struct gmac_desc_list *tx_desc_list;
 	struct gmac_desc *tx_desc;
@@ -826,6 +982,14 @@ static int eth_mchp_send(const struct device *dev, struct net_pkt *pkt)
 
 		frag_data = frag->data;
 		frag_len = frag->len;
+		/*
+		 * The network stack has been writing the payload through the
+		 * CPU cache. The DMA about to be kicked off reads SRAM
+		 * directly, so any line still dirty in cache would never
+		 * reach the MAC FIFO — we would transmit zeros or stale
+		 * data. Clean before the DMA sees the descriptor.
+		 */
+		GMAC_DCACHE_CLEAN(frag_data, frag_len);
 		k_sem_take(&queue->tx_desc_sem, K_FOREVER);
 		if (queue->err_tx_queue_flushed_count != err_tx_queue_flushed_count_at_entry) {
 			k_mutex_unlock(&queue->tx_mutex);
@@ -851,6 +1015,14 @@ static int eth_mchp_send(const struct device *dev, struct net_pkt *pkt)
 	}
 
 	if (queue->err_tx_queue_flushed_count != err_tx_queue_flushed_count_at_entry) {
+		/*
+		 * Pair for the fence right before the "happy path" TSTART
+		 * below: we are aborting after partially updating descriptors,
+		 * but still poke TSTART so the DMA can reclaim whatever was
+		 * already committed. Without the fence, those partial writes
+		 * may not have reached SRAM and the DMA would fetch garbage.
+		 */
+		barrier_dmem_fence_full();
 		gmac_regs->GMAC_NCR |= GMAC_NCR_TSTART_Msk;
 		k_mutex_unlock(&queue->tx_mutex);
 
@@ -866,6 +1038,18 @@ static int eth_mchp_send(const struct device *dev, struct net_pkt *pkt)
 		MODULO_DEC(head_desc_index, tx_desc_list->len);
 	}
 
+	/*
+	 * The Cortex-M store buffer can hold the descriptor writes (addr,
+	 * length, USED clear) after the CPU instructions have retired. TSTART
+	 * is "kick the DMA engine" — if the engine races ahead of the still-
+	 * buffered writes, it fetches half-updated descriptors and asserts
+	 * TFC (Transmit Frame Corruption due to AHB Error), which on this
+	 * part stalls TX until a full error-handler reset. The barrier drains
+	 * the store buffer to SRAM before the kick, so the DMA only sees
+	 * fully-written descriptors.
+	 */
+	barrier_dmem_fence_full();
+
 	gmac_regs->GMAC_NCR |= GMAC_NCR_TSTART_Msk;
 	k_mutex_unlock(&queue->tx_mutex);
 
@@ -878,7 +1062,6 @@ static void eth_mchp_queue0_isr(const struct device *dev)
 	struct gmac_dev_data *const dev_data = dev->data;
 	gmac_registers_t *const gmac_regs = cfg->regs;
 	struct gmac_queue *queue = &dev_data->queue_list[0];
-
 	gmac_queue0_isr(gmac_regs, queue);
 }
 
@@ -902,6 +1085,29 @@ static int eth_mchp_initialize(const struct device *dev)
 
 		return retval;
 	}
+
+#if defined(CONFIG_SOC_FAMILY_MICROCHIP_PIC32CK_SG_GC)
+	/*
+	 * PIC32CK gates the MAC transmit clock domain behind its own GCLK
+	 * channel. Without it, TXEN goes high but the MAC never drives a
+	 * single preamble — pinctrl would "work" (pins muxed to ETH) but
+	 * no bits would ever appear on the wire.
+	 */
+	retval = clock_control_on(cfg->eth_clock_cfg.clock_dev, cfg->eth_clock_cfg.gclk_tx_sys);
+	if ((retval != 0) && (retval != -EALREADY)) {
+		LOG_ERR("Failed to enable GCLK_ETH_TX: %d", retval);
+
+		return retval;
+	}
+
+	/*
+	 * Enable the ETH wrapper before pinctrl so the pin mux actually
+	 * connects to a live peripheral. With ENABLE off, the outputs are
+	 * tri-stated even after the mux is configured and the PHY would
+	 * see no MDIO / RMII activity.
+	 */
+	cfg->regs->ETH_CTRLA |= ETH_CTRLA_ENABLE_Msk;
+#endif
 
 	retval = pinctrl_apply_state(cfg->pinctrl_cfg, PINCTRL_STATE_DEFAULT);
 	if (retval != 0) {
@@ -952,7 +1158,6 @@ static void eth_mchp_iface_init(struct net_if *iface)
 	struct gmac_dev_data *const dev_data = dev->data;
 	const struct gmac_dev_config *const cfg = dev->config;
 	gmac_registers_t *const gmac_regs = cfg->regs;
-	static bool init_done;
 	int result;
 
 	if (dev_data->iface == NULL) {
@@ -961,7 +1166,7 @@ static void eth_mchp_iface_init(struct net_if *iface)
 
 	ethernet_init(iface);
 
-	if (init_done == true) {
+	if (dev_data->init_done == true) {
 		return;
 	}
 
@@ -987,6 +1192,19 @@ static void eth_mchp_iface_init(struct net_if *iface)
 	net_if_set_link_addr(iface, dev_data->mac_addr, sizeof(dev_data->mac_addr),
 			     NET_LINK_ETHERNET);
 
+	/*
+	 * The upstream driver initialized this sem AFTER gmac_queue_init,
+	 * but gmac_queue_init is what enables IER. On PIC32CK the very
+	 * first packet-received event can arrive within microseconds of
+	 * IER being written, and the ISR immediately calls k_sem_give()
+	 * on whatever garbage lives in rx_int_sem at that moment. The
+	 * observed failure was a NULL-pointer dereference inside
+	 * sys_dlist_remove() on the sem's poll-events list — easy to miss
+	 * because it only happens when the wire already has traffic at
+	 * boot. Initialize early to close the window.
+	 */
+	k_sem_init(&dev_data->rx_int_sem, 0, K_SEM_MAX_LIMIT);
+
 	for (int i = GMAC_QUE_0; i < GMAC_QUEUE_NUM; i++) {
 		result = gmac_queue_init(gmac_regs, &dev_data->queue_list[i]);
 		if (result < 0) {
@@ -996,13 +1214,47 @@ static void eth_mchp_iface_init(struct net_if *iface)
 		}
 	}
 
+#if defined(CONFIG_SOC_FAMILY_MICROCHIP_PIC32CK_SG_GC)
+	/*
+	 * The KSZ8081 on the Curiosity Ultra board comes up in MII mode by
+	 * default. This PIC32CK board wires the PHY as RMII with a 25 MHz
+	 * crystal, so the bring-up requires two MDIO overrides (OMSO.RMII
+	 * and CTRL2.REF_CLK_SEL) before the MAC-PHY interface can pass
+	 * traffic. Zephyr's generic phy_mii driver does not issue these
+	 * vendor-specific writes, and they must happen after the hardware
+	 * reset that the PHY driver performs during its own init, because
+	 * that reset wipes the override bits. Following the writes we
+	 * restart autonegotiation so the PHY picks up the new mode.
+	 */
+	{
+		const struct device *mdio_dev = DEVICE_DT_GET(DT_NODELABEL(mdio));
+
+		if (device_is_ready(mdio_dev)) {
+			uint16_t omso = 0, ctrl2 = 0;
+
+			mdio_read(mdio_dev, 0, 0x16, &omso);
+			omso = (omso & ~0x0001) | 0x0002;
+			mdio_write(mdio_dev, 0, 0x16, omso);
+
+			mdio_read(mdio_dev, 0, 0x1F, &ctrl2);
+			ctrl2 &= ~0x0080;
+			mdio_write(mdio_dev, 0, 0x1F, ctrl2);
+
+			mdio_write(mdio_dev, 0, MII_BMCR,
+				   MII_BMCR_AUTONEG_ENABLE | MII_BMCR_AUTONEG_RESTART);
+
+			LOG_INF("KSZ8081 RMII mode configured, autoneg restarted");
+		}
+	}
+#endif
+
 	if (device_is_ready(cfg->phy_dev) == true) {
 		phy_link_callback_set(cfg->phy_dev, &eth_mchp_phy_link_state_changed, (void *)dev);
 	} else {
 		LOG_ERR("PHY device not ready");
 	}
 
-	k_sem_init(&dev_data->rx_int_sem, 0, K_SEM_MAX_LIMIT);
+	/* rx_int_sem already initialized above, before gmac_queue_init. */
 	k_thread_create(&dev_data->rx_thread, dev_data->rx_thread_stack,
 			K_KERNEL_STACK_SIZEOF(dev_data->rx_thread_stack), gmac_rx_thread,
 			(void *)dev, NULL, NULL,
@@ -1012,7 +1264,7 @@ static void eth_mchp_iface_init(struct net_if *iface)
 			0, K_NO_WAIT);
 	k_thread_name_set(&dev_data->rx_thread, "mchp_eth_rx");
 
-	init_done = true;
+	dev_data->init_done = true;
 }
 
 #if defined(CONFIG_NET_STATISTICS_ETHERNET)
@@ -1113,6 +1365,14 @@ static void eth_irq_config_0(void)
 {
 	IRQ_CONNECT(DT_INST_IRQ_BY_NAME(0, gmac, irq), DT_INST_IRQ_BY_NAME(0, gmac, priority),
 		    eth_mchp_queue0_isr, DEVICE_DT_INST_GET(0), 0);
+	/*
+	 * A soft reset (west flash, JLink reset, or CPU watchdog) does not
+	 * clear the NVIC pending latch. If the old firmware was mid-ISR when
+	 * reset hit, the pending bit survives into the new image and the
+	 * irq_enable() below would dispatch our handler before any of the
+	 * driver state (descriptors, sem, IER) is set up.
+	 */
+	NVIC_ClearPendingIRQ(DT_INST_IRQ_BY_NAME(0, gmac, irq));
 	irq_enable(DT_INST_IRQ_BY_NAME(0, gmac, irq));
 }
 

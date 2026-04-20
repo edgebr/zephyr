@@ -27,16 +27,14 @@
 	};
 
 	soc {
-		flash0: flash@8000000 {
-			compatible = "soc-nv-flash";
+		fcw: fcw@44004000 {
+			compatible = "microchip,pic32ck-fcw";
+			reg = <0x44004000 0x1000>;
+			interrupts = <2 0>;
+			interrupt-names = "fcw";
 			#address-cells = <1>;
 			#size-cells = <1>;
-		};
-
-		flash1: flash@c000000 {
-			compatible = "soc-nv-flash";
-			#address-cells = <1>;
-			#size-cells = <1>;
+			status = "okay";
 		};
 
 		sram0: memory@20000000 {

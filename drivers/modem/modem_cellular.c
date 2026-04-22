@@ -1879,7 +1879,6 @@ static void modem_cellular_await_registered_event_handler(struct modem_cellular_
 		modem_cellular_start_timer(data, MODEM_CELLULAR_PERIODIC_SCRIPT_TIMEOUT);
 		break;
 	case MODEM_CELLULAR_EVENT_SUSPEND:
-		net_if_carrier_off(modem_ppp_get_iface(config->ppp));
 		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_INIT_POWER_OFF);
 		break;
 	case MODEM_CELLULAR_EVENT_RING:
@@ -1982,7 +1981,6 @@ static void modem_cellular_registered_event_handler(struct modem_cellular_data *
 		modem_cellular_start_timer(data, MODEM_CELLULAR_PERIODIC_SCRIPT_TIMEOUT);
 		break;
 	case MODEM_CELLULAR_EVENT_SUSPEND:
-		net_if_carrier_off(modem_ppp_get_iface(config->ppp));
 		modem_chat_release(&data->chat);
 		modem_ppp_release(config->ppp);
 		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_INIT_POWER_OFF);
@@ -2046,7 +2044,6 @@ static int modem_cellular_on_await_ppp_dead_state_leave(struct modem_cellular_da
 {
 	const struct modem_cellular_config *config = data->dev->config;
 
-	net_if_carrier_off(modem_ppp_get_iface(config->ppp));
 	modem_chat_release(&data->chat);
 	modem_ppp_release(config->ppp);
 

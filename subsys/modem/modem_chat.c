@@ -387,6 +387,7 @@ static void modem_chat_script_send_handler(struct k_work *item)
 	} else if (modem_chat_script_chat_has_send_timeout(chat)) {
 		modem_chat_script_chat_schedule_send_timeout(chat);
 	} else {
+	chat->tap_buf_len = 0;
 		modem_chat_script_next(chat, false);
 	}
 }
@@ -646,6 +647,16 @@ static void modem_chat_process_byte(struct modem_chat *chat, uint8_t byte)
 		return;
 	}
 
+	/* Capture byte into the line tap buffer (byte-faithful, before any
+	 * separator-replacement that may happen on the receive_buf path).
+	 * Truncates silently when the buffer fills; the tap dispatch below
+	 * uses receive_buf_len to detect truncation and report a length
+	 * consistent with what was actually captured.
+	 */
+	if ((chat->tap_buf != NULL) && (chat->tap_buf_len < chat->tap_buf_size)) {
+		chat->tap_buf[chat->tap_buf_len++] = byte;
+	}
+
 	/* Copy byte to receive buffer */
 	chat->receive_buf[chat->receive_buf_len] = byte;
 	chat->receive_buf_len++;
@@ -657,6 +668,37 @@ static void modem_chat_process_byte(struct modem_chat *chat, uint8_t byte)
 			/* Reset parser */
 			modem_chat_parse_reset(chat);
 			return;
+		}
+
+		/* Fire raw line tap (delimiter excluded). The tap sees every
+		 * non-empty line, regardless of whether a typed matcher
+		 * subsequently dispatches it. Bytes come from tap_buf when
+		 * configured (byte-faithful), else from the live receive_buf
+		 * (separators of matched lines may already be '\0'). The
+		 * length math handles tap_buf truncation via the receive_buf
+		 * vs tap_buf_size comparison.
+		 */
+		if (chat->line_tap != NULL) {
+			const char *tap_line;
+			size_t tap_len;
+
+			if (chat->tap_buf != NULL) {
+				tap_line = (const char *)chat->tap_buf;
+				if (chat->receive_buf_len <= chat->tap_buf_size) {
+					/* Captured entire line + delimiter */
+					tap_len = (size_t)chat->receive_buf_len -
+						  chat->delimiter_size;
+				} else {
+					/* Truncated; delimiter never reached tap_buf */
+					tap_len = chat->tap_buf_size;
+				}
+			} else {
+				tap_line = (const char *)chat->receive_buf;
+				tap_len = (size_t)chat->receive_buf_len -
+					  chat->delimiter_size;
+			}
+
+			chat->line_tap(chat, tap_line, tap_len, chat->user_data);
 		}
 
 		/* Check if match exists */
@@ -862,6 +904,7 @@ int modem_chat_init(struct modem_chat *chat, const struct modem_chat_config *con
 	__ASSERT_NO_MSG(config->delimiter_size > 0);
 	__ASSERT_NO_MSG(!((config->filter == NULL) && (config->filter_size > 0)));
 	__ASSERT_NO_MSG(!((config->unsol_matches == NULL) && (config->unsol_matches_size > 0)));
+	__ASSERT_NO_MSG(!((config->tap_buf == NULL) && (config->tap_buf_size > 0)));
 
 	memset(chat, 0x00, sizeof(*chat));
 	chat->pipe = NULL;
@@ -876,6 +919,9 @@ int modem_chat_init(struct modem_chat *chat, const struct modem_chat_config *con
 	chat->filter_size = config->filter_size;
 	chat->matches[MODEM_CHAT_MATCHES_INDEX_UNSOL] = config->unsol_matches;
 	chat->matches_size[MODEM_CHAT_MATCHES_INDEX_UNSOL] = config->unsol_matches_size;
+	chat->line_tap = config->line_tap;
+	chat->tap_buf = config->tap_buf;
+	chat->tap_buf_size = config->tap_buf_size;
 	atomic_set(&chat->script_state, 0);
 	k_sem_init(&chat->script_stopped_sem, 0, 1);
 	k_work_init(&chat->receive_work, modem_chat_process_handler);

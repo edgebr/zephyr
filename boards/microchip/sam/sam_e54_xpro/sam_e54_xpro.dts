@@ -514,3 +514,16 @@ ext3_serial: &sercom1 {};
 		reg = <0>;
 	};
 };
+
+&sdhc1 {
+	compatible = "microchip,sdhc-g1";
+	pinctrl-0 = <&sdhc1_default>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	disk {
+		compatible = "zephyr,sdmmc-disk";
+		disk-name = "SD";
+		status = "okay";
+	};
+};

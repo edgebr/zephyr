@@ -37,6 +37,7 @@ tests:
       - bg29_rb4420a
       - xg29_rb4412a
       - sam_e54_xpro
+      - pic32ck_gc01_cult
     integration_platforms:
       - robokit1
   drivers.spi.mcux_dspi_dma.loopback:

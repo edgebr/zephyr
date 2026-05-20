@@ -32,6 +32,14 @@
 	};
 
 	soc {
+		hwinfo: device_id@a0071e0 {
+			compatible = "microchip,hwinfo-g1";
+			reg = <0x0a0071e0 0x4>,
+			      <0x0a0071e4 0x4>,
+			      <0x0a0071e8 0x4>,
+			      <0x0a0071ec 0x4>;
+		};
+
 		nvmctrl: flash-controller@44004000 {
 			reg = <0x44004000 0x7c>;
 			#address-cells = <1>;

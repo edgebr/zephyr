@@ -15,6 +15,7 @@ tests:
     platform_allow:
       - pic32cm_jh01_cpro
       - pic32cx_sg41_cult
+      - pic32cx_sg61_cult
   drivers.flash.interface_test.build_only:
     harness: ztest
     build_only: true

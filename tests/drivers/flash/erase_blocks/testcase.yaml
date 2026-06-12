@@ -19,5 +19,6 @@ tests:
       - frdm_imxrt1186/mimxrt1186/cm33
       - frdm_imxrt1186/mimxrt1186/cm7
       - pic32cx_sg41_cult
+      - pic32cx_sg61_cult
     integration_platforms:
       - nrf9160dk/nrf9160

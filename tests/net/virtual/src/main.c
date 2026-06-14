@@ -571,7 +571,7 @@ ZTEST(net_virtual, test_virtual_01_attach_and_detach)
 
 	ret = net_virtual_interface_attach(iface,
 					   NULL);
-	zassert_equal(ret, 0, "Cannot deattach %d from %d (%d)",
+	zassert_equal(ret, 0, "Cannot detach %d from %d (%d)",
 		      net_if_get_by_iface(iface),
 		      net_if_get_by_iface(eth_interfaces[0]),
 		      ret);
@@ -639,7 +639,7 @@ ZTEST(net_virtual, test_virtual_02_real_iface_down)
 
 	ret = net_virtual_interface_attach(iface,
 					   NULL);
-	zassert_equal(ret, 0, "Cannot deattach %d from %d (%d)",
+	zassert_equal(ret, 0, "Cannot detach %d from %d (%d)",
 		      net_if_get_by_iface(iface),
 		      net_if_get_by_iface(eth_interfaces[0]),
 		      ret);
@@ -739,7 +739,7 @@ ZTEST(net_virtual, test_virtual_05_set_peer)
 		      ret);
 
 	ret = net_virtual_interface_attach(iface, NULL);
-	zassert_equal(ret, 0, "Cannot deattach %d from %d (%d)",
+	zassert_equal(ret, 0, "Cannot detach %d from %d (%d)",
 		      net_if_get_by_iface(iface),
 		      net_if_get_by_iface(eth_interfaces[0]),
 		      ret);
@@ -804,7 +804,7 @@ ZTEST(net_virtual, test_virtual_08_detach)
 
 	ret = net_virtual_interface_attach(iface, NULL);
 	zassert_true((ret == 0) || (ret == -EALREADY),
-		     "Cannot deattach %d from %d (%d)",
+		     "Cannot detach %d from %d (%d)",
 		     net_if_get_by_iface(iface),
 		     net_if_get_by_iface(eth_interfaces[0]),
 		     ret);

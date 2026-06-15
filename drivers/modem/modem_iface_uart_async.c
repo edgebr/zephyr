@@ -21,6 +21,14 @@ static uint8_t rx_buf1[RX_BUFFER_SIZE];
 
 static uint8_t rx_buf_idx;
 
+/* Diagnostics for silent RX byte loss (both stay 0 in healthy operation):
+ *  - rx_stopped_count: UART_RX_STOPPED events = DMA/UART overrun, bytes lost
+ *    on the wire before reaching the ring (stock Zephyr ignores this).
+ *  - rx_dropped_total: bytes the RX ring buffer could not absorb.
+ */
+static uint32_t rx_stopped_count;
+static uint32_t rx_dropped_total;
+
 static void iface_uart_async_callback(const struct device *dev,
 				      struct uart_event *evt,
 				      void *user_data)
@@ -52,12 +60,22 @@ static void iface_uart_async_callback(const struct device *dev,
 				       evt->data.rx.buf + evt->data.rx.offset,
 				       evt->data.rx.len);
 		if (written != evt->data.rx.len) {
-			LOG_WRN("Received bytes dropped from ring buf");
+			rx_dropped_total += (uint32_t)(evt->data.rx.len - written);
+			LOG_ERR("RX ring full: dropped %u of %u bytes (total %u)",
+				(unsigned int)(evt->data.rx.len - written),
+				(unsigned int)evt->data.rx.len, rx_dropped_total);
 		}
 		/* Notify upper layer that new data has arrived */
 		k_sem_give(&data->rx_sem);
 		break;
 	case UART_RX_STOPPED:
+		/* DMA/UART overrun or line error: bytes were lost before they
+		 * reached the ring. reason is a bitmask of UART_ERROR_*
+		 * (OVERRUN / FRAMING / PARITY / ...).
+		 */
+		rx_stopped_count++;
+		LOG_ERR("UART RX stopped: reason 0x%x, count %u",
+			(unsigned int)evt->data.rx_stop.reason, rx_stopped_count);
 		break;
 	case UART_RX_DISABLED:
 		/* RX stopped (likely due to line error), re-enable it */

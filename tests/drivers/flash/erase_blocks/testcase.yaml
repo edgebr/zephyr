@@ -23,5 +23,6 @@ tests:
       - sam_e54_xpro
       - pic32cz_ca80_cult
       - pic32cz_ca90_cult
+      - pic32cm_jh01_cpro
     integration_platforms:
       - nrf9160dk/nrf9160

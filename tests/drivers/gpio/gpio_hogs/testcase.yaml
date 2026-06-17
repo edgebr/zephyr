@@ -30,6 +30,7 @@ tests:
       - pic32cz_ca80_cult
       - pic32cz_ca90_cult
       - pic32cx_sg41_cult
+      - pic32cx_sg61_cult
     integration_platforms:
       - native_sim
       - native_sim/native/64

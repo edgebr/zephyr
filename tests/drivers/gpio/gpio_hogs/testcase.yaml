@@ -27,6 +27,7 @@ tests:
       - bg29_rb4420a
       - sam_e54_xpro
       - pic32cm_jh01_cpro
+      - pic32cz_ca80_cult
     integration_platforms:
       - native_sim
       - native_sim/native/64

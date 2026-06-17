@@ -1,0 +1,16 @@
+/*
+ * Copyright (c) 2026 Microchip Technology Inc.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/*connect the PC7 to PC5 for the test*/
+
+/ {
+	zephyr,user {
+		input-gpios = <&portc 7 GPIO_ACTIVE_LOW>;
+		output-gpios = <&portc 5 GPIO_ACTIVE_LOW>;
+	};
+};

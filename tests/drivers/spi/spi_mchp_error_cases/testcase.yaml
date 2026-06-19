@@ -5,3 +5,4 @@ tests:
   drivers.spi.spi_mchp_error_cases:
     platform_allow:
       - sam_e54_xpro
+      - pic32cx_sg41_cult

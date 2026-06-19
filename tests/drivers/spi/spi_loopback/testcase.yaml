@@ -39,6 +39,7 @@ tests:
       - sam_e54_xpro
       - pic32ck_gc01_cult
       - pic32ck_sg01_cult
+      - pic32cx_sg41_cult
     integration_platforms:
       - robokit1
   drivers.spi.mcux_dspi_dma.loopback:
@@ -61,6 +62,7 @@ tests:
       - EXTRA_CONF_FILE="overlay-mchp-spi-dma.conf"
     platform_allow:
       - sam_e54_xpro
+      - pic32cx_sg41_cult
   drivers.spi.stm32_spi_dma.loopback:
     extra_args: EXTRA_CONF_FILE="overlay-stm32-spi-dma.conf"
     platform_allow:

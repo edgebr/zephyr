@@ -280,6 +280,10 @@ static int usart_sam_configure(const struct device *dev,
 		return -ENOTSUP;
 	}
 
+	if (cfg->parity < UART_CFG_PARITY_NONE || cfg->parity > UART_CFG_PARITY_SPACE) {
+		return -ENOTSUP;
+	}
+
 	/* Reset and disable USART */
 	usart->US_CR = US_CR_RSTRX | US_CR_RSTTX
 		     | US_CR_RXDIS | US_CR_TXDIS

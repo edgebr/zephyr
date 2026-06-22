@@ -1,0 +1,31 @@
+/*
+ * Copyright (c) 2026 Microchip Technology Inc.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* connect the PD16(mikroBUS2.13) to PD17(mikroBUS2.14) */
+
+&flx5 {
+	mchp,flexcom-mode = <SAM_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	uart5: serial@200 {
+		current-speed = <115200>;
+		pinctrl-0 = <&pinctrl_uart5_default>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
+
+&pinctrl {
+	pinctrl_uart5_default: uart5-default {
+		group1 {
+			pinmux = <PIN_PD16__FLEXCOM5_IO0>,
+				 <PIN_PD17__FLEXCOM5_IO1>;
+			bias-disable;
+		};
+	};
+};
+
+dut: &uart5 {};

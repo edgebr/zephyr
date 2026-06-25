@@ -1,0 +1,31 @@
+/*
+ * Copyright (c) 2026 Microchip Technology Inc.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* connect the PC23(mikroBUS2.13) to PC24(mikroBUS2.14) */
+
+&flx7 {
+	mchp,flexcom-mode = <SAM_FLEXCOM_MODE_USART>;
+	status = "okay";
+
+	uart7: serial@200 {
+		current-speed = <115200>;
+		pinctrl-0 = <&pinctrl_uart7_default>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
+
+&pinctrl {
+	pinctrl_uart7_default: uart7-default {
+		group1 {
+			pinmux = <PIN_PC23__FLEXCOM7_IO0>,
+				 <PIN_PC24__FLEXCOM7_IO1>;
+			bias-disable;
+		};
+	};
+};
+
+dut: &uart7 {};

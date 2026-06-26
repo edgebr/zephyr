@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*connect the PB24(EXT2.16) to PC12(EXT1.14) and PB25(EXT2.18) to PC13(EXT1.13)*/
+/* Connect PA16(sercom1 TX) to PA13(sercom2 RX) and PA17(sercom1 RX) to PA12(sercom2 TX) */
 
-dut: &sercom0 {
+dut: &sercom1 {
 	compatible = "microchip,sercom-g1-uart";
 	#address-cells = <1>;
 	#size-cells = <0>;
@@ -19,15 +19,15 @@ dut: &sercom0 {
 	rxpo = <1>;
 	txpo = <0>;
 
-	pinctrl-0 = <&sercom0_uart_default>;
+	pinctrl-0 = <&sercom1_uart_default>;
 	pinctrl-names = "default";
 
-	dmas = <&dmac 5 0x04>, <&dmac 6 0x05>;
+	dmas = <&dmac 5 0x06>, <&dmac 6 0x07>;
 	dma-names = "rx", "tx";
 	status = "okay";
 };
 
-dut_aux: &sercom6 {
+dut_aux: &sercom2 {
 	compatible = "microchip,sercom-g1-uart";
 	#address-cells = <1>;
 	#size-cells = <0>;
@@ -40,26 +40,26 @@ dut_aux: &sercom6 {
 	rxpo = <1>;
 	txpo = <0>;
 
-	pinctrl-0 = <&sercom6_uart_default>;
+	pinctrl-0 = <&sercom2_uart_default>;
 	pinctrl-names = "default";
 
-	dmas = <&dmac 3 0x10>, <&dmac 4 0x11>;
+	dmas = <&dmac 3 0x08>, <&dmac 4 0x09>;
 	dma-names = "rx", "tx";
 	status = "okay";
 };
 
 &pinctrl {
-	sercom0_uart_default: sercom0_uart_default {
+	sercom1_uart_default: sercom1_uart_default {
 		group1 {
-			pinmux = <PB24C_SERCOM0_PAD0>,
-				 <PB25C_SERCOM0_PAD1>;
+			pinmux = <PA16C_SERCOM1_PAD0>,
+				 <PA17C_SERCOM1_PAD1>;
 		};
 	};
 
-	sercom6_uart_default: sercom6_uart_default {
+	sercom2_uart_default: sercom2_uart_default {
 		group1 {
-			pinmux = <PC13D_SERCOM6_PAD0>,
-				 <PC12D_SERCOM6_PAD1>;
+			pinmux = <PA12C_SERCOM2_PAD0>,
+				 <PA13C_SERCOM2_PAD1>;
 		};
 	};
 };

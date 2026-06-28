@@ -24,6 +24,7 @@ tests:
       - pic32cx_sg61_cult
       - pic32cz_ca80_cult
       - pic32cz_ca90_cult
+      - pic32ck_gc01_cult
   drivers.uart.uart_errors.async:
     filter: CONFIG_SERIAL_SUPPORT_ASYNC
     platform_allow:

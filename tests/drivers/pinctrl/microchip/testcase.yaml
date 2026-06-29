@@ -9,3 +9,4 @@ tests:
       - pic32cx_sg61_cult
       - pic32cm_jh01_cpro
       - pic32cz_ca80_cult
+      - pic32cz_ca90_cult

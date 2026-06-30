@@ -15,9 +15,19 @@
 LOG_MODULE_REGISTER(modem_iface_uart_async, CONFIG_MODEM_LOG_LEVEL);
 
 #define RX_BUFFER_SIZE CONFIG_MODEM_IFACE_UART_ASYNC_RX_BUFFER_SIZE
-#define RX_BUFFER_NUM CONFIG_MODEM_IFACE_UART_ASYNC_RX_NUM_BUFFERS
 
-K_MEM_SLAB_DEFINE(uart_modem_async_rx_slab, RX_BUFFER_SIZE, RX_BUFFER_NUM, 1);
+static uint8_t rx_buf0[RX_BUFFER_SIZE];
+static uint8_t rx_buf1[RX_BUFFER_SIZE];
+
+static uint8_t rx_buf_idx;
+
+/* Diagnostics for silent RX byte loss (both stay 0 in healthy operation):
+ *  - rx_stopped_count: UART_RX_STOPPED events = DMA/UART overrun, bytes lost
+ *    on the wire before reaching the ring (stock Zephyr ignores this).
+ *  - rx_dropped_total: bytes the RX ring buffer could not absorb.
+ */
+static uint32_t rx_stopped_count;
+static uint32_t rx_dropped_total;
 
 static void iface_uart_async_callback(const struct device *dev,
 				      struct uart_event *evt,
@@ -26,7 +36,6 @@ static void iface_uart_async_callback(const struct device *dev,
 	struct modem_iface *iface = user_data;
 	struct modem_iface_uart_data *data = iface->iface_data;
 	uint32_t written;
-	void *buf;
 	int rc;
 
 	switch (evt->type) {
@@ -34,21 +43,16 @@ static void iface_uart_async_callback(const struct device *dev,
 		k_sem_give(&data->tx_sem);
 		break;
 	case UART_RX_BUF_REQUEST:
-		/* Allocate next RX buffer for UART driver */
-		rc = k_mem_slab_alloc(&uart_modem_async_rx_slab, (void **)&buf, K_NO_WAIT);
-		if (rc < 0) {
-			/* Major problems, UART_RX_BUF_RELEASED event is not being generated, or
-			 * CONFIG_MODEM_IFACE_UART_ASYNC_RX_NUM_BUFFERS is not large enough.
-			 */
-			LOG_ERR("RX buffer starvation");
-			break;
+		/* Provide the next static buffer to the UART driver */
+		if (rx_buf_idx == 0) {
+			rx_buf_idx = 1;
+			uart_rx_buf_rsp(dev, rx_buf0, RX_BUFFER_SIZE);
+		} else {
+			rx_buf_idx = 0;
+			uart_rx_buf_rsp(dev, rx_buf1, RX_BUFFER_SIZE);
 		}
-		/* Provide the buffer to the UART driver */
-		uart_rx_buf_rsp(dev, buf, RX_BUFFER_SIZE);
 		break;
 	case UART_RX_BUF_RELEASED:
-		/* UART driver is done with memory, free it */
-		k_mem_slab_free(&uart_modem_async_rx_slab, (void *)evt->data.rx_buf.buf);
 		break;
 	case UART_RX_RDY:
 		/* Place received data on the ring buffer */
@@ -56,21 +60,26 @@ static void iface_uart_async_callback(const struct device *dev,
 				       evt->data.rx.buf + evt->data.rx.offset,
 				       evt->data.rx.len);
 		if (written != evt->data.rx.len) {
-			LOG_WRN("Received bytes dropped from ring buf");
+			rx_dropped_total += (uint32_t)(evt->data.rx.len - written);
+			LOG_ERR("RX ring full: dropped %u of %u bytes (total %u)",
+				(unsigned int)(evt->data.rx.len - written),
+				(unsigned int)evt->data.rx.len, rx_dropped_total);
 		}
 		/* Notify upper layer that new data has arrived */
 		k_sem_give(&data->rx_sem);
 		break;
 	case UART_RX_STOPPED:
+		/* DMA/UART overrun or line error: bytes were lost before they
+		 * reached the ring. reason is a bitmask of UART_ERROR_*
+		 * (OVERRUN / FRAMING / PARITY / ...).
+		 */
+		rx_stopped_count++;
+		LOG_ERR("UART RX stopped: reason 0x%x, count %u",
+			(unsigned int)evt->data.rx_stop.reason, rx_stopped_count);
 		break;
 	case UART_RX_DISABLED:
 		/* RX stopped (likely due to line error), re-enable it */
-		rc = k_mem_slab_alloc(&uart_modem_async_rx_slab, (void **)&buf, K_FOREVER);
-		if (rc < 0) {
-			LOG_ERR("RX disabled and buffer starvation");
-			break;
-		}
-		rc = uart_rx_enable(dev, buf, RX_BUFFER_SIZE,
+		rc = uart_rx_enable(dev, rx_buf0, RX_BUFFER_SIZE,
 				    CONFIG_MODEM_IFACE_UART_ASYNC_RX_TIMEOUT_US);
 		if (rc < 0) {
 			LOG_ERR("Failed to re-enable UART");
@@ -129,7 +138,6 @@ int modem_iface_uart_init_dev(struct modem_iface *iface,
 			      const struct device *dev)
 {
 	struct modem_iface_uart_data *data;
-	void *buf;
 	int rc;
 
 	if (!device_is_ready(dev)) {
@@ -155,8 +163,7 @@ int modem_iface_uart_init_dev(struct modem_iface *iface,
 		return rc;
 	}
 	/* Enable reception permanently on the interface */
-	k_mem_slab_alloc(&uart_modem_async_rx_slab, (void **)&buf, K_FOREVER);
-	rc = uart_rx_enable(dev, buf, RX_BUFFER_SIZE, CONFIG_MODEM_IFACE_UART_ASYNC_RX_TIMEOUT_US);
+	rc = uart_rx_enable(dev, rx_buf0, RX_BUFFER_SIZE, CONFIG_MODEM_IFACE_UART_ASYNC_RX_TIMEOUT_US);
 	if (rc < 0) {
 		LOG_ERR("Failed to enable UART RX");
 	}

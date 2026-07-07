@@ -520,6 +520,22 @@ void sys_clock_disable(void)
 	SysTick->CTRL &= ~SysTick_CTRL_ENABLE_Msk;
 }
 
+/* Resyncs SysTick and the driver's statics after a core power-down (e.g. RP2350
+ * S2RAM); call from the SoC resume path with IRQs disabled.
+ */
+void sys_clock_lpm_restart(void)
+{
+	NVIC_SetPriority(SysTick_IRQn, _IRQ_PRIO_OFFSET);
+	last_load = CYC_PER_TICK;
+	overflow_cyc = 0U;
+	cycle_count = 0U;
+	announced_cycles = 0U;
+	SysTick->LOAD = last_load - 1;
+	SysTick->VAL = 0; /* resets timer to last_load */
+	SysTick->CTRL = (SysTick_CTRL_ENABLE_Msk | SysTick_CTRL_TICKINT_Msk |
+			 SysTick_CTRL_CLKSOURCE_Msk);
+}
+
 static int sys_clock_driver_init(void)
 {
 

@@ -9,6 +9,7 @@ config SOC_SERIES_RP2350
 	select SOC_RESET_HOOK
 	select XIP
 	select HAS_PM
+	select PM_S2RAM_CUSTOM_MARKING if PM_S2RAM
 
 config SOC_RP2350A_M33
 	select ARM

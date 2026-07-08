@@ -18,12 +18,6 @@
 
 #include <zephyr/data/json.h>
 
-struct json_obj_key_value {
-	const char *key;
-	size_t key_len;
-	struct json_token value;
-};
-
 static bool lexer_consume(struct json_lexer *lex, struct json_token *tok,
 			  enum json_tokens empty_token)
 {
@@ -1272,6 +1266,63 @@ int json_arr_separate_parse_object(struct json_obj *json, const struct json_obj_
 	}
 
 	return obj_parse(json, descr, descr_len, val);
+}
+
+int json_obj_separate_parse_init(struct json_obj *json, char *payload, size_t len)
+{
+	return obj_init(json, payload, len);
+}
+
+int json_obj_next_key_value(struct json_obj *json, struct json_obj_key_value *kv)
+{
+	int ret = obj_next(json, kv);
+
+	if (ret < 0 || kv->key == NULL) {
+		return ret;
+	}
+
+	/*
+	 * obj_next() returns a container value as its start token only. Extend it to
+	 * the full balanced span so the caller receives the complete {...} / [...]
+	 * value and the walk resyncs to the member after it. Track brace/bracket depth
+	 * over the token stream; the lexer returns each string as a single token, so
+	 * braces inside string values do not miscount. skip_field() does the same walk
+	 * but treats a truncated container as success, whereas this walk must report
+	 * unbalanced input, so the scan is inlined with explicit end-of-input handling.
+	 */
+	if (kv->value.type == JSON_TOK_OBJECT_START || kv->value.type == JSON_TOK_ARRAY_START) {
+		enum json_tokens type = kv->value.type;
+		char *start = kv->value.start;
+		struct json_token tok;
+		int depth = 1;
+
+		do {
+			if (!lexer_next(&json->lex, &tok)) {
+				return -EINVAL;
+			}
+
+			switch (tok.type) {
+			case JSON_TOK_OBJECT_START:
+			case JSON_TOK_ARRAY_START:
+				depth++;
+				break;
+			case JSON_TOK_OBJECT_END:
+			case JSON_TOK_ARRAY_END:
+				depth--;
+				break;
+			case JSON_TOK_ERROR:
+				return -EINVAL;
+			default:
+				break;
+			}
+		} while (depth > 0);
+
+		kv->value.type = type;
+		kv->value.start = start;
+		kv->value.end = tok.end;
+	}
+
+	return ret;
 }
 
 static char escape_as(char chr)

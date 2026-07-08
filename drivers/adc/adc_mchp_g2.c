@@ -497,8 +497,17 @@ static int adc_mchp_init(const struct device *dev)
 		return ret;
 	}
 
-	/* Configure pins */
-	pinctrl_apply_state(dev_cfg->pcfg, PINCTRL_STATE_DEFAULT);
+	/* Configure pins. Optional: a node that uses only internal inputs (e.g.
+	 * the temperature sensor / internal reference) needs no external pins and
+	 * may omit pinctrl-0, in which case pcfg is NULL and there is nothing to
+	 * apply. */
+	if (dev_cfg->pcfg != NULL) {
+		ret = pinctrl_apply_state(dev_cfg->pcfg, PINCTRL_STATE_DEFAULT);
+		if (ret < 0) {
+			LOG_ERR("Failed to apply ADC pinctrl state: %d", ret);
+			return ret;
+		}
+	}
 
 	/* Software reset */
 	adc_reg->ADC_CTRLA |= ADC_CTRLA_SWRST_Msk;
@@ -589,13 +598,22 @@ static DEVICE_API(adc, adc_mchp_api) = {
 		.freq = 0,                                                                         \
 	}
 
+/* pinctrl is optional: nodes that use only internal inputs (temperature sensor,
+ * internal reference) route no external pins and may omit pinctrl-0. */
+#define ADC_MCHP_PINCTRL_DEFINE(n)                                                                 \
+	IF_ENABLED(DT_INST_NODE_HAS_PROP(n, pinctrl_0), (PINCTRL_DT_INST_DEFINE(n);))
+
+#define ADC_MCHP_PINCTRL_GET(n)                                                                    \
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, pinctrl_0),                                            \
+		    (PINCTRL_DT_INST_DEV_CONFIG_GET(n)), (NULL))
+
 #define ADC_MCHP_CONFIG_DEFN(n)                                                                    \
 	static void adc_mchp_config_##n(const struct device *dev);                                 \
 	static struct adc_mchp_dev_config adc_mchp_cfg_##n = {                                     \
 		.regs = (adc_registers_t *)DT_INST_REG_ADDR_BY_NAME(n, adc),                       \
 		.fuses = (fuses_calotp_registers_t *)DT_INST_REG_ADDR_BY_NAME(n, fuses),           \
 		.config_func = adc_mchp_config_##n,                                                \
-		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),                                         \
+		.pcfg = ADC_MCHP_PINCTRL_GET(n),                                                   \
 		.ctrl_clock_div = DT_INST_PROP(n, ctrl_clock_div),                                 \
 		.adc_div_ratio = DT_INST_PROP(n, adc_div_ratio),                                   \
 		.adc_wkup_clock_count = DT_INST_PROP(n, adc_wkup_clock_count),                     \
@@ -605,7 +623,7 @@ static DEVICE_API(adc, adc_mchp_api) = {
 		.adc_clock.gclk_sys = (void *)(DT_INST_CLOCKS_CELL_BY_NAME(n, gclk, subsystem))}
 
 #define ADC_MCHP_DEVICE(n)                                                                         \
-	PINCTRL_DT_INST_DEFINE(n);                                                                 \
+	ADC_MCHP_PINCTRL_DEFINE(n)                                                                 \
 	ADC_MCHP_CONFIG_DEFN(n);                                                                   \
 	ADC_MCHP_DATA_DEFN(n);                                                                     \
 	DEVICE_DT_INST_DEFINE(n, adc_mchp_init, NULL, &adc_mchp_data_##n, &adc_mchp_cfg_##n,       \

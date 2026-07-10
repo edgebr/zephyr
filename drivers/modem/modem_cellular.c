@@ -8,6 +8,7 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/cellular.h>
+#include <zephyr/drivers/modem/modem_cellular.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/modem/chat.h>
 #include <zephyr/modem/cmux.h>
@@ -22,6 +23,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(modem_cellular, CONFIG_MODEM_LOG_LEVEL);
 
+#include <stdarg.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -34,10 +36,11 @@ LOG_MODULE_REGISTER(modem_cellular, CONFIG_MODEM_LOG_LEVEL);
 #define MODEM_CELLULAR_DATA_MANUFACTURER_LEN (65)
 #define MODEM_CELLULAR_DATA_FW_VERSION_LEN   (65)
 #define MODEM_CELLULAR_DATA_APN_LEN          (32)
+#define MODEM_CELLULAR_DATA_APN_CRED_LEN     (64)
 
 #define MODEM_CELLULAR_RESERVED_DLCIS (2)
 #define MODEM_CELLULAR_MAX_APN_CMDS (2)
-#define MODEM_CELLULAR_APN_BUF_SIZE (64)
+#define MODEM_CELLULAR_APN_BUF_SIZE (256)
 
 /* Magic constants */
 #define CSQ_RSSI_UNKNOWN  (99)
@@ -52,6 +55,16 @@ LOG_MODULE_REGISTER(modem_cellular, CONFIG_MODEM_LOG_LEVEL);
 #ifdef CONFIG_MODEM_CELLULAR_APN
 BUILD_ASSERT(sizeof(CONFIG_MODEM_CELLULAR_APN) - 1 < MODEM_CELLULAR_DATA_APN_LEN,
 			"CONFIG_MODEM_CELLULAR_APN too long for data->apn");
+#endif
+
+#ifdef CONFIG_MODEM_CELLULAR_APN_USERNAME
+BUILD_ASSERT(sizeof(CONFIG_MODEM_CELLULAR_APN_USERNAME) - 1 < MODEM_CELLULAR_DATA_APN_CRED_LEN,
+			"CONFIG_MODEM_CELLULAR_APN_USERNAME too long for data->apn_username");
+#endif
+
+#ifdef CONFIG_MODEM_CELLULAR_APN_PASSWORD
+BUILD_ASSERT(sizeof(CONFIG_MODEM_CELLULAR_APN_PASSWORD) - 1 < MODEM_CELLULAR_DATA_APN_CRED_LEN,
+			"CONFIG_MODEM_CELLULAR_APN_PASSWORD too long for data->apn_password");
 #endif
 
 enum modem_cellular_state {
@@ -143,6 +156,8 @@ struct modem_cellular_data {
 	uint8_t manufacturer[MODEM_CELLULAR_DATA_MANUFACTURER_LEN];
 	uint8_t fw_version[MODEM_CELLULAR_DATA_FW_VERSION_LEN];
 	uint8_t apn[MODEM_CELLULAR_DATA_APN_LEN];
+	uint8_t apn_username[MODEM_CELLULAR_DATA_APN_CRED_LEN];
+	uint8_t apn_password[MODEM_CELLULAR_DATA_APN_CRED_LEN];
 
 	struct modem_chat_script_chat apn_chats[MODEM_CELLULAR_MAX_APN_CMDS];
 	struct modem_chat_script apn_script;
@@ -611,16 +626,18 @@ MODEM_CHAT_MATCH_DEFINE(connect_match, "CONNECT", "", NULL);
 #endif
 
 
-static int append_apn_cmd(struct modem_cellular_data *data, uint8_t *steps, const char *fmt,
-			  const char *apn_value)
+static int append_apn_cmd(struct modem_cellular_data *data, uint8_t *steps, const char *fmt, ...)
 {
+	va_list args;
 	int n;
 
 	if (*steps >= MODEM_CELLULAR_MAX_APN_CMDS) {
 		return -ENOMEM;
 	}
 
-	n = snprintk(data->apn_buf[*steps], MODEM_CELLULAR_APN_BUF_SIZE, fmt, apn_value);
+	va_start(args, fmt);
+	n = vsnprintk(data->apn_buf[*steps], MODEM_CELLULAR_APN_BUF_SIZE, fmt, args);
+	va_end(args);
 
 	if (n < 0 || n >= MODEM_CELLULAR_APN_BUF_SIZE) {
 		return -ENOMEM;
@@ -645,6 +662,11 @@ static void modem_cellular_build_apn_script(struct modem_cellular_data *data)
 	/* Vendor‑specific extras */
 #if DT_HAS_COMPAT_STATUS_OKAY(swir_hl7800)
 	append_apn_cmd(data, &steps, "AT+KCNXCFG=1,\"GPRS\",\"%s\",,,\"IPV4\"", data->apn);
+#endif
+
+#if DT_HAS_COMPAT_STATUS_OKAY(quectel_eg915u)
+	append_apn_cmd(data, &steps, "AT+QICSGP=1,1,\"%s\",\"%s\",\"%s\",1", data->apn,
+		       data->apn_username, data->apn_password);
 #endif
 
 	/* Glue the array into the script object */
@@ -1970,6 +1992,43 @@ out:
 	return ret;
 }
 
+int modem_cellular_set_apn_credentials(const struct device *dev, const char *username,
+					const char *password)
+{
+	struct modem_cellular_data *data = dev->data;
+	int ret = 0;
+
+	if (username == NULL) {
+		username = "";
+	}
+
+	if (password == NULL) {
+		password = "";
+	}
+
+	if ((strlen(username) >= MODEM_CELLULAR_DATA_APN_CRED_LEN) ||
+	    (strlen(password) >= MODEM_CELLULAR_DATA_APN_CRED_LEN)) {
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&data->api_lock, K_FOREVER);
+
+	if (!modem_cellular_apn_change_allowed(data->state)) {
+		ret = -EBUSY;
+		goto out;
+	}
+
+	strncpy(data->apn_username, username, MODEM_CELLULAR_DATA_APN_CRED_LEN - 1);
+	data->apn_username[MODEM_CELLULAR_DATA_APN_CRED_LEN - 1] = '\0';
+
+	strncpy(data->apn_password, password, MODEM_CELLULAR_DATA_APN_CRED_LEN - 1);
+	data->apn_password[MODEM_CELLULAR_DATA_APN_CRED_LEN - 1] = '\0';
+
+out:
+	k_mutex_unlock(&data->api_lock);
+	return ret;
+}
+
 static int modem_cellular_set_callback(const struct device *dev, cellular_event_mask_t mask,
 				       cellular_event_cb_t cb, void *user_data)
 {
@@ -2049,6 +2108,18 @@ static void modem_cellular_init_apn(struct modem_cellular_data *data)
 		strncpy(data->apn, CONFIG_MODEM_CELLULAR_APN, sizeof(data->apn) - 1);
 		data->apn[sizeof(data->apn) - 1] = '\0';
 	}
+#endif
+
+#ifdef CONFIG_MODEM_CELLULAR_APN_USERNAME
+	strncpy(data->apn_username, CONFIG_MODEM_CELLULAR_APN_USERNAME,
+		sizeof(data->apn_username) - 1);
+	data->apn_username[sizeof(data->apn_username) - 1] = '\0';
+#endif
+
+#ifdef CONFIG_MODEM_CELLULAR_APN_PASSWORD
+	strncpy(data->apn_password, CONFIG_MODEM_CELLULAR_APN_PASSWORD,
+		sizeof(data->apn_password) - 1);
+	data->apn_password[sizeof(data->apn_password) - 1] = '\0';
 #endif
 
 	modem_chat_script_init(&data->apn_script);
@@ -2356,12 +2427,6 @@ MODEM_CHAT_SCRIPT_DEFINE(quectel_eg915u_init_chat_script, quectel_eg915u_init_ch
 MODEM_CHAT_SCRIPT_CMDS_DEFINE(
 	quectel_eg915u_dial_chat_script_cmds, MODEM_CHAT_SCRIPT_CMD_RESP("ATE0\r\n", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP_MULT("AT+CFUN=1\r\n", allow_match),
-	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGDCONT=1,\"IP\",\"" CONFIG_MODEM_CELLULAR_APN "\"\r\n",
-				   ok_match),
-	MODEM_CHAT_SCRIPT_CMD_RESP("AT+QICSGP=1,1,\"" CONFIG_MODEM_CELLULAR_APN
-				   "\",\"" CONFIG_MODEM_CELLULAR_APN_USERNAME
-				   "\",\"" CONFIG_MODEM_CELLULAR_APN_PASSWORD "\",1\r\n",
-				   ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("ATD*99***1#\r\n", connect_match));
 
 MODEM_CHAT_SCRIPT_DEFINE(quectel_eg915u_dial_chat_script, quectel_eg915u_dial_chat_script_cmds,

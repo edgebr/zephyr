@@ -56,6 +56,7 @@ extern "C" {
  */
 enum modem_cellular_state {
 	MODEM_CELLULAR_STATE_IDLE = 0,
+	MODEM_CELLULAR_STATE_RECOVERY,
 	MODEM_CELLULAR_STATE_RESET_PULSE,
 	MODEM_CELLULAR_STATE_AWAIT_RESET,
 	MODEM_CELLULAR_STATE_POWER_ON_PULSE,
@@ -162,6 +163,7 @@ struct modem_cellular_data {
 	/** @cond INTERNAL_HIDDEN */
 	uint8_t *chat_argv[32];
 	uint8_t script_failure_counter;
+	uint8_t recovery_count;
 
 	/* Status */
 	enum cellular_registration_status registration_status_gsm;
@@ -216,6 +218,13 @@ struct modem_cellular_data {
 	atomic_t periodic_paused;
 	/** Set when a TIMEOUT is swallowed while paused; cleared on KICK. */
 	bool periodic_timeout_skipped;
+
+#if defined(CONFIG_MODEM_CELLULAR_STATS)
+	/** Operational statistics, exposed via cellular_get_stats(). */
+	struct cellular_stats stats;
+	/** k_uptime (ms) when registration was last lost; 0 while registered. */
+	uint32_t stats_outage_start_ms;
+#endif
 	/** @endcond */
 };
 
@@ -280,6 +289,11 @@ struct modem_cellular_vendor_config {
 	uint16_t power_pulse_duration_ms;
 	/** Duration of the modem reset pulse, in milliseconds. */
 	uint16_t reset_pulse_duration_ms;
+	/** Timeout for the modem to revert from CMUX to AT mode after a CMUX disconnect, in
+	 * milliseconds. Defaults to @c reset_pulse_duration_ms if not specified (value == 0U) for
+	 * legacy compatibility.
+	 */
+	uint16_t cmux_disconnect_timeout_ms;
 	/** Maximum modem startup delay, in milliseconds. */
 	uint16_t startup_time_ms;
 	/** Maximum modem shutdown delay, in milliseconds. */

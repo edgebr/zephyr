@@ -32,7 +32,6 @@ LOG_MODULE_REGISTER(modem_cellular, CONFIG_MODEM_LOG_LEVEL);
 	K_MSEC(CONFIG_MODEM_CELLULAR_PERIODIC_SCRIPT_MS)
 
 /* Magic constants */
-#define MODEM_CELLULAR_MAX_SCRIPT_FAILURES   (3)
 #define CSQ_RSSI_UNKNOWN		     (99)
 #define CESQ_RSRP_UNKNOWN		     (255)
 #define CESQ_RSRQ_UNKNOWN		     (255)
@@ -61,6 +60,8 @@ static const char *modem_cellular_state_str(enum modem_cellular_state state)
 	switch (state) {
 	case MODEM_CELLULAR_STATE_IDLE:
 		return "idle";
+	case MODEM_CELLULAR_STATE_RECOVERY:
+		return "recovery";
 	case MODEM_CELLULAR_STATE_RESET_PULSE:
 		return "reset pulse";
 	case MODEM_CELLULAR_STATE_AWAIT_RESET:
@@ -452,6 +453,30 @@ static void modem_cellular_clear_registration_status(struct modem_cellular_data 
 	data->registration_status_lte = CELLULAR_REGISTRATION_NOT_REGISTERED;
 }
 
+#if defined(CONFIG_MODEM_CELLULAR_STATS)
+static void modem_cellular_stats_on_reg_transition(struct modem_cellular_data *data,
+						   bool was_registered, bool is_registered)
+{
+	if (was_registered && !is_registered) {
+		data->stats.deregistrations += 1;
+		data->stats_outage_start_ms = k_uptime_get_32();
+	} else if (!was_registered && is_registered && (data->stats_outage_start_ms != 0)) {
+		data->stats.outage_ms += k_uptime_get_32() - data->stats_outage_start_ms;
+		data->stats_outage_start_ms = 0;
+	} else {
+		/* No change in registration state; nothing to record. */
+	}
+}
+
+static void modem_cellular_chat_on_cme_error(struct modem_chat *chat, char **argv, uint16_t argc,
+					     void *user_data)
+{
+	struct modem_cellular_data *data = (struct modem_cellular_data *)user_data;
+
+	data->stats.command_errors_cme += 1;
+}
+#endif
+
 void modem_cellular_chat_on_cxreg(struct modem_chat *chat, char **argv, uint16_t argc,
 				  void *user_data)
 {
@@ -485,6 +510,9 @@ void modem_cellular_chat_on_cxreg(struct modem_chat *chat, char **argv, uint16_t
 	}
 	LOG_DBG("REG %d AcT %d", registration_status, data->access_tech);
 
+	IF_ENABLED(CONFIG_MODEM_CELLULAR_STATS,
+		   (const bool was_registered = modem_cellular_is_registered(data)));
+
 	if (strcmp(argv[0], "+CREG: ") == 0) {
 		registration_prev = data->registration_status_gsm;
 		data->registration_status_gsm = registration_status;
@@ -495,6 +523,10 @@ void modem_cellular_chat_on_cxreg(struct modem_chat *chat, char **argv, uint16_t
 		registration_prev = data->registration_status_lte;
 		data->registration_status_lte = registration_status;
 	}
+
+	IF_ENABLED(CONFIG_MODEM_CELLULAR_STATS,
+		   (modem_cellular_stats_on_reg_transition(data, was_registered,
+							   modem_cellular_is_registered(data))));
 
 	if (modem_cellular_is_registered(data)) {
 		modem_cellular_delegate_event(data, MODEM_CELLULAR_EVENT_REGISTERED);
@@ -587,7 +619,10 @@ MODEM_CHAT_MATCH_DEFINE(cgmr_match __maybe_unused, "", "", modem_cellular_chat_o
 
 MODEM_CHAT_MATCHES_DEFINE(abort_matches,
 			  MODEM_CHAT_MATCH("ERROR", "", NULL),
-			  MODEM_CHAT_MATCH("+CME ERROR", "", NULL));
+			  MODEM_CHAT_MATCH("+CME ERROR", "",
+					   COND_CODE_1(CONFIG_MODEM_CELLULAR_STATS,
+						       (modem_cellular_chat_on_cme_error),
+						       (NULL))));
 
 MODEM_CHAT_MATCHES_DEFINE(__maybe_unused dial_abort_matches,
 			  MODEM_CHAT_MATCH("ERROR", "", NULL),
@@ -1025,22 +1060,80 @@ static int modem_cellular_on_run_init_script_state_enter(struct modem_cellular_d
 	return modem_pipe_open_async(data->uart_pipe);
 }
 
-static void modem_cellular_enter_recovery_state(struct modem_cellular_data *data)
+static int modem_cellular_on_recovery_state_enter(struct modem_cellular_data *data)
+{
+	/* Back off before resetting. Growing the delay with the attempt count keeps a
+	 * persistent fault from resetting the modem back-to-back, and gives a modem
+	 * that is merely slow to respond some time to settle. Clamp it so a large
+	 * attempt budget cannot produce an unbounded delay.
+	 */
+	uint32_t backoff_ms = MIN(CONFIG_MODEM_CELLULAR_RECOVERY_BACKOFF_MS * data->recovery_count,
+				  CONFIG_MODEM_CELLULAR_RECOVERY_BACKOFF_MAX_MS);
+
+	LOG_DBG("recovery attempt %u, backoff %u ms", data->recovery_count, backoff_ms);
+	modem_cellular_start_timer(data, K_MSEC(backoff_ms));
+	return 0;
+}
+
+static void modem_cellular_recovery_event_handler(struct modem_cellular_data *data,
+						  enum modem_cellular_event evt)
 {
 	const struct modem_cellular_config *config = data->dev->config;
 
-	/* Release CMUX if it was attached, so the UART pipe can be reattached
-	 * cleanly on the next connect attempt. No-op when CMUX is not attached.
-	 */
-	modem_cmux_release(&data->cmux);
+	switch (evt) {
+	case MODEM_CELLULAR_EVENT_TIMEOUT:
+		/* Release CMUX if attached so the UART pipe reattaches cleanly on the
+		 * next connect attempt. No-op when CMUX is not attached.
+		 */
+		modem_cmux_release(&data->cmux);
 
-	if (modem_cellular_gpio_is_enabled(&config->reset_gpio) && config->reset_on_recovery) {
-		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_RESET_PULSE);
-	} else if (modem_cellular_gpio_is_enabled(&config->power_gpio)) {
-		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_POWER_ON_PULSE);
-	} else {
+		if (modem_cellular_gpio_is_enabled(&config->reset_gpio) &&
+		    config->reset_on_recovery) {
+			modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_RESET_PULSE);
+		} else if (modem_cellular_gpio_is_enabled(&config->power_gpio)) {
+			modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_POWER_ON_PULSE);
+		} else {
+			modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_IDLE);
+		}
+		break;
+
+	case MODEM_CELLULAR_EVENT_SUSPEND:
 		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_IDLE);
+		break;
+
+	default:
+		break;
 	}
+}
+
+static int modem_cellular_on_recovery_state_leave(struct modem_cellular_data *data)
+{
+	modem_cellular_stop_timer(data);
+	return 0;
+}
+
+static void modem_cellular_enter_recovery_state(struct modem_cellular_data *data)
+{
+	IF_ENABLED(CONFIG_MODEM_CELLULAR_STATS, (data->stats.recoveries += 1));
+
+	/* Bound the recovery loop: a persistent fault parks in IDLE once the
+	 * attempt budget is spent, instead of resetting forever. A zero budget
+	 * disables the cap.
+	 */
+	if (CONFIG_MODEM_CELLULAR_MAX_RECOVERIES != 0 &&
+	    data->recovery_count >= CONFIG_MODEM_CELLULAR_MAX_RECOVERIES) {
+		LOG_WRN("Recovery attempts exhausted (%u), suspending", data->recovery_count);
+		data->recovery_count = 0;
+		modem_cellular_delegate_event(data, MODEM_CELLULAR_EVENT_SUSPEND);
+		return;
+	}
+
+	/* Saturate rather than wrap so the backoff stays monotonic in unlimited mode. */
+	if (data->recovery_count < UINT8_MAX) {
+		data->recovery_count++;
+	}
+
+	modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_RECOVERY);
 }
 
 static void modem_cellular_run_init_script_event_handler(struct modem_cellular_data *data,
@@ -1117,6 +1210,11 @@ static void modem_cellular_connect_cmux_event_handler(struct modem_cellular_data
 		break;
 
 	case MODEM_CELLULAR_EVENT_CMUX_CONNECTED:
+		/* CMUX connected: the init/CMUX-connect fault that drives recovery has
+		 * cleared, so reset the attempt count. A sustained connect/drop flap is
+		 * not bounded by this alone; that would need a stability timer.
+		 */
+		data->recovery_count = 0;
 		modem_cellular_notify_user_pipes_connected(data);
 		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_OPEN_DLCI1);
 		break;
@@ -1243,6 +1341,7 @@ static void modem_cellular_wait_for_apn_event_handler(struct modem_cellular_data
 static void modem_cellular_script_failed(struct modem_cellular_data *data)
 {
 	data->script_failure_counter++;
+	IF_ENABLED(CONFIG_MODEM_CELLULAR_STATS, (data->stats.command_failures += 1));
 }
 
 static void modem_cellular_script_success(struct modem_cellular_data *data)
@@ -1252,7 +1351,7 @@ static void modem_cellular_script_success(struct modem_cellular_data *data)
 
 static bool modem_cellular_is_script_retry_exceeded(struct modem_cellular_data *data)
 {
-	if (data->script_failure_counter >= MODEM_CELLULAR_MAX_SCRIPT_FAILURES) {
+	if (data->script_failure_counter >= CONFIG_MODEM_CELLULAR_MAX_SCRIPT_FAILURES) {
 		data->script_failure_counter = 0;
 		return true;
 	}
@@ -1626,6 +1725,7 @@ static int modem_cellular_on_registered_state_leave(struct modem_cellular_data *
 static int modem_cellular_on_await_ppp_dead_state_enter(struct modem_cellular_data *data)
 {
 	net_if_dormant_on(modem_ppp_get_iface(data->ppp));
+	IF_ENABLED(CONFIG_MODEM_CELLULAR_STATS, (data->stats.link_drops += 1));
 
 	return 0;
 }
@@ -1671,19 +1771,50 @@ static int modem_cellular_on_init_power_off_state_enter(struct modem_cellular_da
 	return 0;
 }
 
+static void modem_cellular_cmux_cleanup(struct modem_cellular_data *data)
+{
+	modem_cellular_notify_user_pipes_disconnected(data);
+	modem_chat_release(&data->chat);
+	modem_ppp_release(data->ppp);
+}
+
 static void modem_cellular_init_power_off_event_handler(struct modem_cellular_data *data,
 							enum modem_cellular_event evt)
 {
 	const struct modem_cellular_config *config = data->dev->config;
+	uint16_t disconnect_timeout_ms;
 
 	switch (evt) {
 	case MODEM_CELLULAR_EVENT_CMUX_DISCONNECTED:
 		modem_cellular_stop_timer(data);
 		data->cmd_pipe = data->uart_pipe;
-		/* Assume the same time as reset pulse is enough to return from CMUX to AT mode */
-		modem_cellular_start_timer(data, K_MSEC(config->vendor->reset_pulse_duration_ms));
+		/* CMUX disconnected, notify users */
+		modem_cellular_cmux_cleanup(data);
+		/* Switch the chat instance back to the UART pipe to handle unsolicited events */
+		modem_chat_attach(&data->chat, data->cmd_pipe);
+		/* Fallback to `reset_pulse_duration_ms` if `cmux_disconnect_timeout_ms` not
+		 * specified as this was the behaviour before Zephyr v4.5.
+		 */
+		disconnect_timeout_ms = config->vendor->cmux_disconnect_timeout_ms > 0U
+						? config->vendor->cmux_disconnect_timeout_ms
+						: config->vendor->reset_pulse_duration_ms;
+		/* Unless signalled, wait for the modem to return from CMUX to AT mode */
+		modem_cellular_start_timer(data, K_MSEC(disconnect_timeout_ms));
 		break;
+	case MODEM_CELLULAR_EVENT_MODEM_READY:
+		/* Modem driver indicated it is ready to handle commands after disconnecting CMUX.
+		 * Cancel the timer and proceed as if it has expired.
+		 */
+		modem_cellular_stop_timer(data);
+		__fallthrough;
 	case MODEM_CELLULAR_EVENT_TIMEOUT:
+		if (data->cmd_pipe != data->uart_pipe) {
+			/* No CMUX_DISCONNECTED event occurred, notify users here */
+			modem_cellular_cmux_cleanup(data);
+		} else {
+			/* Release the chat instance attached in CMUX_DISCONNECTED */
+			modem_chat_release(&data->chat);
+		}
 		/* Shutdown script can only be used if cmd_pipe is available, i.e. we are not in
 		 * some intermediary state without a pipe for commands available
 		 */
@@ -1698,14 +1829,6 @@ static void modem_cellular_init_power_off_event_handler(struct modem_cellular_da
 	default:
 		break;
 	}
-}
-
-static int modem_cellular_on_init_power_off_state_leave(struct modem_cellular_data *data)
-{
-	modem_cellular_notify_user_pipes_disconnected(data);
-	modem_chat_release(&data->chat);
-	modem_ppp_release(data->ppp);
-	return 0;
 }
 
 static int modem_cellular_on_run_shutdown_script_state_enter(struct modem_cellular_data *data)
@@ -1815,6 +1938,10 @@ static int modem_cellular_on_state_enter(struct modem_cellular_data *data)
 		ret = modem_cellular_on_await_reset_state_enter(data);
 		break;
 
+	case MODEM_CELLULAR_STATE_RECOVERY:
+		ret = modem_cellular_on_recovery_state_enter(data);
+		break;
+
 	case MODEM_CELLULAR_STATE_POWER_ON_PULSE:
 		ret = modem_cellular_on_power_on_pulse_state_enter(data);
 		break;
@@ -1912,6 +2039,10 @@ static int modem_cellular_on_state_leave(struct modem_cellular_data *data)
 		ret = modem_cellular_on_await_reset_state_leave(data);
 		break;
 
+	case MODEM_CELLULAR_STATE_RECOVERY:
+		ret = modem_cellular_on_recovery_state_leave(data);
+		break;
+
 	case MODEM_CELLULAR_STATE_POWER_ON_PULSE:
 		ret = modem_cellular_on_power_on_pulse_state_leave(data);
 		break;
@@ -1938,10 +2069,6 @@ static int modem_cellular_on_state_leave(struct modem_cellular_data *data)
 
 	case MODEM_CELLULAR_STATE_AWAIT_PPP_DEAD:
 		ret = modem_cellular_on_await_ppp_dead_state_leave(data);
-		break;
-
-	case MODEM_CELLULAR_STATE_INIT_POWER_OFF:
-		ret = modem_cellular_on_init_power_off_state_leave(data);
 		break;
 
 	case MODEM_CELLULAR_STATE_RUN_SHUTDOWN_SCRIPT:
@@ -2001,6 +2128,10 @@ static void modem_cellular_event_handler(struct modem_cellular_data *data,
 
 	case MODEM_CELLULAR_STATE_AWAIT_RESET:
 		modem_cellular_await_reset_event_handler(data, evt);
+		break;
+
+	case MODEM_CELLULAR_STATE_RECOVERY:
+		modem_cellular_recovery_event_handler(data, evt);
 		break;
 
 	case MODEM_CELLULAR_STATE_POWER_ON_PULSE:
@@ -2095,6 +2226,7 @@ static void modem_cellular_cmux_handler(struct modem_cmux *cmux, enum modem_cmux
 		modem_cellular_delegate_event(data, MODEM_CELLULAR_EVENT_CMUX_CONNECTED);
 		break;
 	case MODEM_CMUX_EVENT_DISCONNECTED:
+		IF_ENABLED(CONFIG_MODEM_CELLULAR_STATS, (data->stats.cmux_disconnects += 1));
 		modem_cellular_delegate_event(data, MODEM_CELLULAR_EVENT_CMUX_DISCONNECTED);
 		break;
 	default:
@@ -2377,12 +2509,22 @@ int cellular_modem_resume_periodic_script(const struct device *dev)
 	return 0;
 }
 
+#if defined(CONFIG_MODEM_CELLULAR_STATS)
+static const struct cellular_stats *modem_cellular_get_stats(const struct device *dev)
+{
+	struct modem_cellular_data *data = (struct modem_cellular_data *)dev->data;
+
+	return &data->stats;
+}
+#endif
+
 DEVICE_API(cellular, modem_cellular_api) = {
 	.get_signal = modem_cellular_get_signal,
 	.get_modem_info = modem_cellular_get_modem_info,
 	.get_registration_status = modem_cellular_get_registration_status,
 	.set_apn = modem_cellular_set_apn,
 	.set_callback = modem_cellular_set_callback,
+	IF_ENABLED(CONFIG_MODEM_CELLULAR_STATS, (.get_stats = modem_cellular_get_stats,))
 };
 
 int modem_cellular_pm_action(const struct device *dev, enum pm_device_action action)

@@ -238,8 +238,6 @@ enum modem_chat_script_send_state {
 	MODEM_CHAT_SCRIPT_SEND_STATE_IDLE,
 	/* Sending request */
 	MODEM_CHAT_SCRIPT_SEND_STATE_REQUEST,
-	/* Sending delimiter */
-	MODEM_CHAT_SCRIPT_SEND_STATE_DELIMITER,
 };
 
 /**

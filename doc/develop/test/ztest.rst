@@ -386,7 +386,7 @@ example below:
 
 .. code-block:: cmake
 
-   cmake_minimum_required(VERSION 3.20.0)
+   cmake_minimum_required(VERSION 3.28.0)
 
    project(app)
    find_package(Zephyr COMPONENTS unittest REQUIRED HINTS $ENV{ZEPHYR_BASE})

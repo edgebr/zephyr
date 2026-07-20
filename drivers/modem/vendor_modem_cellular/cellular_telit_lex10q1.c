@@ -70,7 +70,6 @@ static const struct modem_cellular_config_scripts telit_lex10q1_scripts = {
 	static struct modem_cellular_data MODEM_CELLULAR_INST_NAME(data, inst) = {                 \
 		.chat_delimiter = "\r",                                                            \
 		.chat_filter = "\n",                                                               \
-		.ppp = &MODEM_CELLULAR_INST_NAME(ppp, inst),                                       \
 	};                                                                                         \
                                                                                                    \
 	MODEM_CELLULAR_DEFINE_AND_INIT_USER_PIPES(inst, (user_pipe_0, 3))                          \

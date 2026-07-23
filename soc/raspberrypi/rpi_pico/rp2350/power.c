@@ -93,6 +93,14 @@ void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
 	ARG_UNUSED(substate_id);
 
 	if (state == PM_STATE_SUSPEND_TO_RAM) {
+		/* Clear the debug-power override here, on the resume path. It is set in
+		 * rp2350_s2ram_off() right before the power-down; on a real wake the
+		 * core resumes into arch_pm_s2ram_suspend()'s caller, so the clear after
+		 * the WFI in rp2350_s2ram_off() never runs. Leaving IGNORE set corrupts
+		 * the power sequencer state for subsequent S2RAM cycles.
+		 */
+		powman_clear_bits(&powman_hw->dbg_pwrcfg, POWMAN_DBG_PWRCFG_IGNORE_BITS);
+
 		rp2350_restore_clocks();
 		sys_clock_lpm_restart();
 	}

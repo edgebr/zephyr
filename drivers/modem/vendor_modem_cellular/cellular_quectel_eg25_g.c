@@ -27,7 +27,15 @@ MODEM_CHAT_MATCHES_DEFINE(quectel_eg25_g_unsol, MODEM_CELLULAR_COMMON_UNSOL_MATC
  * lines; the staging buffer self-clears on commit, so the neighbourcell query is
  * independent of any other command in the periodic script.
  */
-MODEM_CHAT_MATCH_DEFINE(qeng_neighbourcell_match, "OK", "", quectel_eg25_g_on_qeng_scan_commit);
+/*
+ * AT+QENG="neighbourcell" returns bare "ERROR" while the modem is not camped
+ * (searching / limited service). Terminate the step on OK or ERROR so the
+ * report never aborts the periodic script; both commit, so an ERROR while
+ * searching publishes an empty neighbour list rather than a stale one.
+ */
+MODEM_CHAT_MATCHES_DEFINE(qeng_neighbourcell_match,
+			  MODEM_CHAT_MATCH("OK", "", quectel_eg25_g_on_qeng_scan_commit),
+			  MODEM_CHAT_MATCH("ERROR", "", quectel_eg25_g_on_qeng_scan_commit));
 
 /*
  * AT+CMUX <port_speed> is specified in 3GPP TS 27.007 defining values 1..6 (up to 230400);
@@ -103,9 +111,10 @@ MODEM_CHAT_SCRIPT_CMDS_DEFINE(quectel_eg25_g_periodic_chat_script_cmds,
 			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CEREG?", ok_match),
 			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGREG?", ok_match),
 			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CSQ", csq_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+QENG=\"servingcell\"", ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+QENG=\"neighbourcell\"",
-							 qeng_neighbourcell_match));
+			      MODEM_CHAT_SCRIPT_CMD_RESP_MULT("AT+QENG=\"servingcell\"",
+							      allow_match),
+			      MODEM_CHAT_SCRIPT_CMD_RESP_MULT("AT+QENG=\"neighbourcell\"",
+							      qeng_neighbourcell_match));
 
 MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_periodic_chat_script,
 			 quectel_eg25_g_periodic_chat_script_cmds, abort_matches,

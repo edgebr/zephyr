@@ -1282,18 +1282,17 @@ int json_obj_next_key_value(struct json_obj *json, struct json_obj_key_value *kv
 	}
 
 	/*
-	 * obj_next() returns a container value as its start token only. Extend it to
-	 * the full balanced span so the caller receives the complete {...} / [...]
-	 * value and the walk resyncs to the member after it. Track brace/bracket depth
-	 * over the token stream; the lexer returns each string as a single token, so
-	 * braces inside string values do not miscount. skip_field() does the same walk
-	 * but treats a truncated container as success, whereas this walk must report
-	 * unbalanced input, so the scan is inlined with explicit end-of-input handling.
+	 * obj_next() returns a container value as its start token only. Walk the
+	 * token stream to the matching close so the caller receives the full
+	 * balanced {...} / [...] span and the walk resyncs to the next member.
+	 * Strings are single lexer tokens, so braces inside a string value do not
+	 * affect the walk.
 	 */
 	if (kv->value.type == JSON_TOK_OBJECT_START || kv->value.type == JSON_TOK_ARRAY_START) {
 		enum json_tokens type = kv->value.type;
 		char *start = kv->value.start;
 		struct json_token tok;
+		uint64_t kinds = (type == JSON_TOK_ARRAY_START) ? 1U : 0U;
 		int depth = 1;
 
 		do {
@@ -1304,12 +1303,28 @@ int json_obj_next_key_value(struct json_obj *json, struct json_obj_key_value *kv
 			switch (tok.type) {
 			case JSON_TOK_OBJECT_START:
 			case JSON_TOK_ARRAY_START:
+				if (depth >= 64) {
+					return -EINVAL;
+				}
+				if (tok.type == JSON_TOK_ARRAY_START) {
+					kinds |= ((uint64_t)1 << depth);
+				} else {
+					kinds &= ~((uint64_t)1 << depth);
+				}
 				depth++;
 				break;
 			case JSON_TOK_OBJECT_END:
-			case JSON_TOK_ARRAY_END:
+			case JSON_TOK_ARRAY_END: {
+				bool closed_array = (tok.type == JSON_TOK_ARRAY_END);
+				bool opened_array;
+
 				depth--;
+				opened_array = ((kinds >> depth) & 1U) != 0U;
+				if (closed_array != opened_array) {
+					return -EINVAL;
+				}
 				break;
+			}
 			case JSON_TOK_ERROR:
 				return -EINVAL;
 			default:

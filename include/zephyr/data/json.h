@@ -757,7 +757,8 @@ int json_obj_separate_parse_init(struct json_obj *json, char *payload, size_t le
  *
  * @return 0 on success with @a kv->key pointing at the member key and
  * @a kv->value holding the raw value span; 0 at the end of the object with
- * @a kv->key set to NULL; a negative error code on malformed input.
+ * @a kv->key set to NULL; a negative error code on malformed input or on
+ * container nesting deeper than 64 levels.
  */
 int json_obj_next_key_value(struct json_obj *json, struct json_obj_key_value *kv);
 

@@ -6,6 +6,12 @@
 
 #include "modem_backend_mock.h"
 
+/* Notify through the modem workqueue like the real backends do, so a test that
+ * enables CONFIG_MODEM_DEDICATED_WORKQUEUE really does keep every piece of modem
+ * work off the system workqueue.
+ */
+#include "modem_workqueue.h"
+
 #include <string.h>
 
 static int modem_backend_mock_open(void *data)
@@ -36,6 +42,62 @@ static bool modem_backend_mock_update(struct modem_backend_mock *mock, const uin
 	return false;
 }
 
+#ifdef CONFIG_TEST_MODEM_MOCK_BACKEND_TRANSMIT_CHAIN
+
+static int modem_backend_mock_transmit_chain(void *data,
+					     const struct modem_pipe_data_fragment *frags,
+					     size_t num_frags)
+{
+	struct modem_backend_mock *mock = (struct modem_backend_mock *)data;
+	int remaining = mock->limit;
+	int frag_remaining;
+	int written = 0;
+	int ret;
+
+	if (mock->bridge) {
+		struct modem_backend_mock *t_mock = mock->bridge;
+
+		for (int i = 0; i < num_frags; i++) {
+			/* Don't put more data than the mock limit */
+			frag_remaining = MIN(frags[i].size, remaining);
+			ret = ring_buf_put(&t_mock->rx_rb, frags[i].data, frag_remaining);
+			remaining -= ret;
+			written += ret;
+			if (ret < frags[i].size) {
+				/* No more space in buffer, terminate */
+				break;
+			}
+		}
+		modem_work_submit(&t_mock->receive_ready_work);
+		modem_work_submit(&mock->transmit_idle_work);
+		return written;
+	}
+
+	modem_work_submit(&mock->transmit_idle_work);
+
+	for (int i = 0; i < num_frags; i++) {
+		frag_remaining = MIN(frags[i].size, remaining);
+
+		if (modem_backend_mock_update(mock, frags[i].data, frag_remaining)) {
+			/* Skip ringbuffer if transaction consumes bytes */
+			ret = frag_remaining;
+			modem_backend_mock_put(mock, mock->transaction->put,
+					       mock->transaction->put_size);
+			modem_backend_mock_prime(mock, mock->transaction->next);
+		} else {
+			ret = ring_buf_put(&mock->tx_rb, frags[i].data, frag_remaining);
+		}
+		written += ret;
+		remaining -= ret;
+		if (ret < frags[i].size) {
+			break;
+		}
+	}
+	return written;
+}
+
+#else
+
 static int modem_backend_mock_transmit(void *data, const uint8_t *buf, size_t size)
 {
 	struct modem_backend_mock *mock = (struct modem_backend_mock *)data;
@@ -47,10 +109,12 @@ static int modem_backend_mock_transmit(void *data, const uint8_t *buf, size_t si
 		struct modem_backend_mock *t_mock = mock->bridge;
 
 		ret = ring_buf_put(&t_mock->rx_rb, buf, size);
-		k_work_submit(&t_mock->receive_ready_work);
-		k_work_submit(&mock->transmit_idle_work);
+		modem_work_submit(&t_mock->receive_ready_work);
+		modem_work_submit(&mock->transmit_idle_work);
 		return ret;
 	}
+
+	modem_work_submit(&mock->transmit_idle_work);
 
 	if (modem_backend_mock_update(mock, buf, size)) {
 		/* Skip ringbuffer if transaction consumes bytes */
@@ -147,7 +211,7 @@ void modem_backend_mock_put(struct modem_backend_mock *mock, const uint8_t *buf,
 	__ASSERT(ring_buf_put(&mock->rx_rb, buf, size) == size,
 		 "Mock buffer capacity exceeded");
 
-	k_work_submit(&mock->receive_ready_work);
+	modem_work_submit(&mock->receive_ready_work);
 }
 
 void modem_backend_mock_prime(struct modem_backend_mock *mock,

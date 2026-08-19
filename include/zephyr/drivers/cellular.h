@@ -89,6 +89,10 @@ enum cellular_registration_status {
 enum cellular_event {
 	/** One or more modem-info field changed (e.g. IMSI became available). */
 	CELLULAR_EVENT_MODEM_INFO_CHANGED = BIT(0),
+	/** The modem started detecting an active jammer (Quectel +QJDR: JAMMED). */
+	CELLULAR_EVENT_JAMMING_DETECTED = BIT(1),
+	/** The modem stopped detecting an active jammer (Quectel +QJDR: NO JAMMING). */
+	CELLULAR_EVENT_JAMMING_CLEARED = BIT(2),
 };
 
 /* Opaque bit-mask large enough for all current & future events */

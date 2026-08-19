@@ -130,4 +130,48 @@ config MODEM_CELLULAR_CLEAR_FORBIDDEN
 
 endif #DT_HAS_U_BLOX_LARA_R6_ENABLED
 
+if DT_HAS_QUECTEL_EG915U_ENABLED
+
+config MODEM_CELLULAR_QJD_URC_PERIOD
+	int "Period, in seconds, of the +QJDR URC while jamming persists (0 disables periodic re-reporting)"
+	range 0 120
+	default 0
+
+config MODEM_CELLULAR_QJD_MINCH
+	int "Minimum jammed channel/ARFCN number (GSM only)"
+	range 0 254
+	default 5
+
+config MODEM_CELLULAR_QJD_SINR
+	int "Signal-to-interference-plus-noise ratio threshold (GSM only)"
+	range 0 63
+	default 3
+
+config MODEM_CELLULAR_QJD_RSSI_GSM
+	int "RSSI threshold under GSM"
+	range -110 -50
+	default -80
+
+config MODEM_CELLULAR_QJD_RSRP
+	int "Reference Signal Receiving Power threshold (LTE only)"
+	range -140 -44
+	default -105
+
+config MODEM_CELLULAR_QJD_RSRQ
+	int "Reference Signal Receiving Quality threshold (LTE only)"
+	range -19 -3
+	default -15
+
+config MODEM_CELLULAR_QJD_RSSI
+	int "Received Signal Strength Indication threshold (LTE only)"
+	range -120 -20
+	default -50
+
+config MODEM_CELLULAR_QJD_SHAKEPERIOD
+	int "Timer value, in seconds, used to prevent jamming-status jitter"
+	range 1 10
+	default 5
+
+endif #DT_HAS_QUECTEL_EG915U_ENABLED
+
 endif #MODEM_CELLULAR

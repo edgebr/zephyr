@@ -350,12 +350,16 @@ static void test_modem_ppp_before(void *f)
 
 	/* Reset mock pipe */
 	modem_backend_mock_reset(&mock);
+
+	/* Reset the attached pipe */
+	modem_ppp_release(&ppp);
+	modem_ppp_attach(&ppp, mock_pipe);
 }
 
 /*************************************************************************************************/
 /*                                             Tests                                             */
 /*************************************************************************************************/
-ZTEST(modem_ppp, test_ppp_frame_receive)
+static void put_and_validate_wrapped_frame(void)
 {
 	struct net_pkt *pkt;
 	size_t pkt_len;
@@ -381,6 +385,75 @@ ZTEST(modem_ppp, test_ppp_frame_receive)
 
 	zassert_true(memcmp(buffer, ppp_frame_unwrapped, pkt_len) == 0,
 		     "Received net pkt data incorrect");
+}
+
+ZTEST(modem_ppp, test_ppp_frame_receive)
+{
+	/* Basic wrapped frame */
+	put_and_validate_wrapped_frame();
+}
+
+ZTEST(modem_ppp, test_carrier_follows_attach_release)
+{
+	/* Attached by the test fixture */
+	zassert_true(net_if_is_carrier_ok(&test_iface), "Carrier should be on while attached");
+
+	modem_ppp_release(&ppp);
+	zassert_false(net_if_is_carrier_ok(&test_iface), "Carrier should be off after release");
+
+	zassert_ok(modem_ppp_attach(&ppp, mock_pipe), "Failed to reattach PPP");
+	zassert_true(net_if_is_carrier_ok(&test_iface), "Carrier should be on after attach");
+}
+
+ZTEST(modem_ppp, test_ppp_no_carrier_received)
+{
+	static const char *unsolicited_no_carrier = "\r\nNO CARRIER\r\n";
+
+	/* Not dead to start with */
+	zassert_false(ppp.state & BIT(MODEM_PPP_STATE_DEAD_BIT));
+	zassert_true(net_if_is_carrier_ok(&test_iface), "Carrier should be on before NO CARRIER");
+
+	/* Partial message doesn't result in anything */
+	modem_backend_mock_put(&mock, unsolicited_no_carrier, strlen(unsolicited_no_carrier) - 1);
+
+	/* Link continues to work */
+	put_and_validate_wrapped_frame();
+	zassert_true(net_if_is_carrier_ok(&test_iface),
+		     "Partial NO CARRIER should leave carrier on");
+
+	/* Put full 'NO CARRIER' message */
+	modem_backend_mock_put(&mock, unsolicited_no_carrier, strlen(unsolicited_no_carrier));
+
+	/* Give modem ppp time to process received frame */
+	k_msleep(1000);
+
+	/* Dead after receiving the 'NO CARRIER' message */
+	zassert_true(ppp.state & BIT(MODEM_PPP_STATE_DEAD_BIT));
+	zassert_false(net_if_is_carrier_ok(&test_iface), "NO CARRIER should turn carrier off");
+	modem_ppp_release(&ppp);
+
+	zassert_ok(modem_ppp_attach(&ppp, mock_pipe), "Failed to reattach PPP");
+	zassert_true(net_if_is_carrier_ok(&test_iface), "Carrier should be on after attach");
+	zassert_false(ppp.state & BIT(MODEM_PPP_STATE_DEAD_BIT), "Attach should clear dead state");
+}
+
+ZTEST(modem_ppp, test_ppp_no_carrier_received_first)
+{
+	static const char *unsolicited_no_carrier = "\r\nNO CARRIER\r\n";
+
+	/* Not dead to start with */
+	zassert_false(ppp.state & BIT(MODEM_PPP_STATE_DEAD_BIT));
+	zassert_true(net_if_is_carrier_ok(&test_iface), "Carrier should be on before NO CARRIER");
+
+	/* Put full 'NO CARRIER' message as first message on pipe */
+	modem_backend_mock_put(&mock, unsolicited_no_carrier, strlen(unsolicited_no_carrier));
+
+	/* Give modem ppp time to process received frame */
+	k_msleep(1000);
+
+	/* Dead after receiving the 'NO CARRIER' message */
+	zassert_true(ppp.state & BIT(MODEM_PPP_STATE_DEAD_BIT));
+	zassert_false(net_if_is_carrier_ok(&test_iface), "NO CARRIER should turn carrier off");
 }
 
 ZTEST(modem_ppp, test_corrupt_start_end_ppp_frame_receive)

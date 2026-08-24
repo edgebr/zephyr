@@ -409,8 +409,9 @@ manifest:
       groups:
         - tee
     - name: trusted-firmware-m
-      revision: 9a4cb1a280b63a5e66bd469e82eb75f2b3e05a78
+      revision: a4362efe5b3d7a96ef5a11238aa019493990271f # zephyr_tf-m_v2.2.x-catfish
       path: modules/tee/tf-m/trusted-firmware-m
+      remote: hexagon
       groups:
         - tee
     - name: uoscore-uedhoc

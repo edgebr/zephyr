@@ -258,6 +258,8 @@ static const struct modem_cellular_vendor_config quectel_eg25_g_vendor = {
 		.size = ARRAY_SIZE(quectel_eg25_g_unsol),
 	},
 	/* clang-format on */
+	.chat_delimiter = "\r",
+	.chat_filter = "\n",
 	.power_pulse_duration_ms = 1500,
 	.reset_pulse_duration_ms = 500,
 	.startup_time_ms = 15000,
@@ -268,8 +270,6 @@ static const struct modem_cellular_vendor_config quectel_eg25_g_vendor = {
 	MODEM_DT_INST_PPP_DEFINE(inst, MODEM_CELLULAR_INST_NAME(ppp, inst), NULL, 1500, 64);       \
                                                                                                    \
 	static struct modem_cellular_data MODEM_CELLULAR_INST_NAME(data, inst) = {                 \
-		.chat_delimiter = "\r",                                                            \
-		.chat_filter = "\n",                                                               \
 		.ppp = &MODEM_CELLULAR_INST_NAME(ppp, inst),                                       \
 	};                                                                                         \
                                                                                                    \

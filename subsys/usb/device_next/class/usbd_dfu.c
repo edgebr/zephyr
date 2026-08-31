@@ -778,11 +778,20 @@ static int dfu_mode_init(struct usbd_class_data *const c_data)
 	data->ctx = usbd_class_get_ctx(c_data);
 
 	STRUCT_SECTION_FOREACH(usbd_dfu_image, image) {
+		int ret;
+
 		if (image->if_desc->bAlternateSetting == data->alternate) {
 			data->image = image;
 		}
 
-		if (usbd_add_descriptor(uds_ctx, image->sd_nd)) {
+		/*
+		 * This runs once per configuration, so on a device that offers
+		 * both a high-speed and a full-speed configuration the second
+		 * pass finds the descriptors already registered. That is not a
+		 * failure, and the index is valid either way.
+		 */
+		ret = usbd_add_descriptor(uds_ctx, image->sd_nd);
+		if (ret != 0 && ret != -EALREADY) {
 			LOG_ERR("Failed to add string descriptor");
 		} else {
 			image->if_desc->iInterface = usbd_str_desc_get_idx(image->sd_nd);

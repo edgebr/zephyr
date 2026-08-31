@@ -589,6 +589,17 @@ static void modem_cellular_chat_on_cxreg(struct modem_chat *chat, char **argv, u
 	}
 }
 
+static void modem_cellular_chat_on_qjdr(struct modem_chat *chat, char **argv, uint16_t argc,
+					void *user_data)
+{
+	struct modem_cellular_data *data = (struct modem_cellular_data *)user_data;
+	bool jammed = (strcmp(argv[0], "+QJDR: JAMMED") == 0);
+
+	modem_cellular_emit_event(data, jammed ? CELLULAR_EVENT_JAMMING_DETECTED
+						: CELLULAR_EVENT_JAMMING_CLEARED,
+				  NULL);
+}
+
 MODEM_CHAT_MATCH_DEFINE(ok_match, "OK", "", NULL);
 MODEM_CHAT_MATCHES_DEFINE(allow_match, MODEM_CHAT_MATCH("OK", "", NULL),
 			  MODEM_CHAT_MATCH("ERROR", "", NULL));
@@ -608,7 +619,9 @@ MODEM_CHAT_MATCH_DEFINE(cereg_match, "+CEREG: ", ",", modem_cellular_chat_on_cxr
 MODEM_CHAT_MATCHES_DEFINE(unsol_matches,
 			  MODEM_CHAT_MATCH("+CREG: ", ",", modem_cellular_chat_on_cxreg),
 			  MODEM_CHAT_MATCH("+CEREG: ", ",", modem_cellular_chat_on_cxreg),
-			  MODEM_CHAT_MATCH("+CGREG: ", ",", modem_cellular_chat_on_cxreg));
+			  MODEM_CHAT_MATCH("+CGREG: ", ",", modem_cellular_chat_on_cxreg),
+			  MODEM_CHAT_MATCH("+QJDR: JAMMED", "", modem_cellular_chat_on_qjdr),
+			  MODEM_CHAT_MATCH("+QJDR: NO JAMMING", "", modem_cellular_chat_on_qjdr));
 
 MODEM_CHAT_MATCHES_DEFINE(abort_matches, MODEM_CHAT_MATCH("ERROR", "", NULL));
 
@@ -2419,6 +2432,36 @@ MODEM_CHAT_SCRIPT_CMDS_DEFINE(quectel_eg915u_init_chat_script_cmds,
 			     MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match),
 			     MODEM_CHAT_SCRIPT_CMD_RESP("AT+CIMI", cimi_match),
 			     MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match),
+			     MODEM_CHAT_SCRIPT_CMD_RESP("AT+QJDCFG=\"urc\",1", ok_match),
+			     MODEM_CHAT_SCRIPT_CMD_RESP(
+				     "AT+QJDCFG=\"period\"," STRINGIFY(
+					     CONFIG_MODEM_CELLULAR_QJD_URC_PERIOD),
+				     ok_match),
+			     MODEM_CHAT_SCRIPT_CMD_RESP(
+				     "AT+QJDCFG=\"minch\"," STRINGIFY(
+					     CONFIG_MODEM_CELLULAR_QJD_MINCH),
+				     ok_match),
+			     MODEM_CHAT_SCRIPT_CMD_RESP(
+				     "AT+QJDCFG=\"sinr\"," STRINGIFY(CONFIG_MODEM_CELLULAR_QJD_SINR),
+				     ok_match),
+			     MODEM_CHAT_SCRIPT_CMD_RESP(
+				     "AT+QJDCFG=\"rssi/gsm\"," STRINGIFY(
+					     CONFIG_MODEM_CELLULAR_QJD_RSSI_GSM),
+				     ok_match),
+			     MODEM_CHAT_SCRIPT_CMD_RESP(
+				     "AT+QJDCFG=\"rsrp\"," STRINGIFY(CONFIG_MODEM_CELLULAR_QJD_RSRP),
+				     ok_match),
+			     MODEM_CHAT_SCRIPT_CMD_RESP(
+				     "AT+QJDCFG=\"rsrq\"," STRINGIFY(CONFIG_MODEM_CELLULAR_QJD_RSRQ),
+				     ok_match),
+			     MODEM_CHAT_SCRIPT_CMD_RESP(
+				     "AT+QJDCFG=\"rssi\"," STRINGIFY(CONFIG_MODEM_CELLULAR_QJD_RSSI),
+				     ok_match),
+			     MODEM_CHAT_SCRIPT_CMD_RESP(
+				     "AT+QJDCFG=\"shakeperiod\"," STRINGIFY(
+					     CONFIG_MODEM_CELLULAR_QJD_SHAKEPERIOD),
+				     ok_match),
+			     MODEM_CHAT_SCRIPT_CMD_RESP("AT+QJDR=1", ok_match),
 			     MODEM_CHAT_SCRIPT_CMD_RESP("AT+CMUX=0,0,5,127", ok_match));
 
 MODEM_CHAT_SCRIPT_DEFINE(quectel_eg915u_init_chat_script, quectel_eg915u_init_chat_script_cmds,

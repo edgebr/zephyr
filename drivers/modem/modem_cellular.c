@@ -772,7 +772,10 @@ static void modem_cellular_build_apn_script(struct modem_cellular_data *data)
 
 	/* Vendor‑specific extras */
 #if DT_HAS_COMPAT_STATUS_OKAY(swir_hl7800)
-	append_apn_cmd(data, &steps, "AT+KCNXCFG=1,\"GPRS\",\"%s\",,,\"IPV4\"", apn_value);
+	append_apn_cmd(data, &steps,
+		       "AT+KCNXCFG=" STRINGIFY(CONFIG_MODEM_CELLULAR_PDP_CONTEXT_ID)
+		       ",\"GPRS\",\"%s\",,,\"IPV4\"",
+		       apn_value);
 #endif
 
 	/* Glue the array into the script object */

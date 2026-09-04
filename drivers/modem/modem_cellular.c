@@ -2974,7 +2974,7 @@ MODEM_CHAT_SCRIPT_DEFINE(sqn_gm02s_periodic_chat_script, sqn_gm02s_periodic_chat
 	MODEM_CELLULAR_DEFINE_AND_INIT_USER_PIPES(inst, (user_pipe_0, 3), (user_pipe_1, 4))        \
                                                                                                    \
 	MODEM_CELLULAR_DEFINE_INSTANCE(                                                            \
-		inst, 2000, 500, 15000, 3000, false, NULL, &quectel_eg915u_init_chat_script,       \
+		inst, 3100, 500, 15000, 3000, false, NULL, &quectel_eg915u_init_chat_script,       \
 		&quectel_eg915u_dial_chat_script, &quectel_eg915u_periodic_chat_script, NULL)
 
 #define MODEM_CELLULAR_DEVICE_SIMCOM_SIM7080(inst)                                                 \

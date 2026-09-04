@@ -794,10 +794,13 @@ static void modem_cellular_build_apn_script(struct modem_cellular_data *data)
 	const char *apn_value = data->apn;
 
 	if (config->use_default_apn) {
-		/* Omit the APN name AT+CGDCONT=1,"IP","" */
+		/* Omit the APN name AT+CGDCONT=<cid>,"IP","" */
 		apn_value = "";
 	}
-	append_apn_cmd(data, &steps, "AT+CGDCONT=1,\"IP\",\"%s\"", apn_value);
+	append_apn_cmd(data, &steps,
+		       "AT+CGDCONT=" STRINGIFY(CONFIG_MODEM_CELLULAR_PDP_CONTEXT_ID)
+		       ",\"IP\",\"%s\"",
+		       apn_value);
 
 	/* Vendor‑specific extras */
 #if DT_HAS_COMPAT_STATUS_OKAY(swir_hl7800)

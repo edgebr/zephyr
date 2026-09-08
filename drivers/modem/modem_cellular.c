@@ -2086,6 +2086,7 @@ static int modem_cellular_on_await_ppp_dead_state_enter(struct modem_cellular_da
 
 	net_if_dormant_on(modem_ppp_get_iface(config->ppp));
 	IF_ENABLED(CONFIG_MODEM_CELLULAR_STATS, (data->stats.link_drops += 1));
+	modem_cellular_start_timer(data, MODEM_CELLULAR_PERIODIC_SCRIPT_TIMEOUT);
 
 	return 0;
 }
@@ -2099,6 +2100,7 @@ static void modem_cellular_await_ppp_dead_event_handler(struct modem_cellular_da
 	case MODEM_CELLULAR_EVENT_RING:
 		LOG_DBG("RING received!");
 		modem_pipe_open_async(data->uart_pipe);
+		break;
 	case MODEM_CELLULAR_EVENT_PPP_DEAD:
 		/* Wait for the channel to return to AT mode after PPP termination */
 		modem_cellular_start_timer(data, K_MSEC(config->vendor->reset_pulse_duration_ms));

@@ -388,7 +388,6 @@ static void modem_chat_script_send_handler(struct k_work *item)
 	} else if (modem_chat_script_chat_has_send_timeout(chat)) {
 		modem_chat_script_chat_schedule_send_timeout(chat);
 	} else {
-	chat->tap_buf_len = 0;
 		modem_chat_script_next(chat, false);
 	}
 }
@@ -432,6 +431,7 @@ static void modem_chat_parse_reset(struct modem_chat *chat)
 	chat->delimiter_match_len = 0;
 	chat->argc = 0;
 	chat->parse_match = NULL;
+	chat->tap_buf_len = 0;
 
 #if defined(CONFIG_MODEM_CHAT_LOG_RAW_RX)
 	chat->raw_log_separators_len = 0;

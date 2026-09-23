@@ -5,8 +5,69 @@ config UART_RPI_PICO_PIO
 	bool "Raspberry Pi PIO UART driver"
 	default y
 	depends on DT_HAS_RASPBERRYPI_PICO_UART_PIO_ENABLED
+	depends on PIO_RPI_PICO
 	select SERIAL_HAS_DRIVER
+	select SERIAL_SUPPORT_INTERRUPT
 	select PICOSDK_USE_PIO
 	select PICOSDK_USE_CLAIM
 	select PINCTRL
+	select DMA if UART_INTERRUPT_DRIVEN
+	select DMA_RPI_PICO if UART_INTERRUPT_DRIVEN
 	depends on RESET
+
+if UART_RPI_PICO_PIO && UART_INTERRUPT_DRIVEN
+
+config UART_RPI_PICO_PIO_POLL_STACK_SIZE
+	int "Stack size of the thread draining the PIO UART"
+	default 512
+	help
+	  The PIO UART only exposes a polled interface for TX, and RX is
+	  captured by DMA into a ring buffer independently of the CPU, and
+	  kept running indefinitely by a second, hardware-chained DMA channel
+	  (no software reload involved). This dedicated thread periodically
+	  invokes the registered uart_irq_callback so consumers (modem_chat,
+	  the Bluetooth H:4 backend, ...) get serviced.
+
+config UART_RPI_PICO_PIO_POLL_THREAD_PRIORITY
+	int "Priority of the PIO UART service thread"
+	default 1
+	help
+	  A high, but not the highest, priority. RX bytes are already safe in
+	  the DMA ring by the time this thread runs (see
+	  UART_RPI_PICO_PIO_RX_RING_BUF_SIZE), so this thread no longer has to
+	  win every scheduling race the way a driver bit-banging the hardware
+	  FIFO directly would. Running it at the system's most extreme
+	  cooperative priority starved other low-priority threads that also
+	  need to run (e.g. deferred log processing) under sustained traffic.
+
+config UART_RPI_PICO_PIO_POLL_PERIOD_US
+	int "Poll period, in microseconds, of the PIO UART service thread"
+	default 2000
+	help
+	  How often the thread above runs. RX bytes are safe in the DMA ring
+	  regardless of this value (see UART_RPI_PICO_PIO_RX_RING_BUF_SIZE),
+	  so this trades off two things against each other, not data loss
+	  risk either way:
+	  - Too short, and with one such thread per PIO UART instance, the
+	    combined polling load can starve other low-priority threads in
+	    the system (e.g. deferred log processing) of CPU time.
+	  - Too long, and the uart_irq_callback gets invoked less often,
+	    which can deliver bytes to it in larger bursts; layers above
+	    this driver (e.g. modem_backend_uart_isr) were not necessarily
+	    sized to absorb a burst that big in one call.
+
+config UART_RPI_PICO_PIO_RX_RING_BUF_SIZE
+	int "Size, in bytes, of the RX DMA ring buffer"
+	default 256
+	range 2 32768
+	help
+	  Must be a power of two: the DMA channel's hardware address-wrapping
+	  only supports power-of-two ring sizes. RX bytes are captured here
+	  by DMA straight out of the PIO hardware FIFO (which is only 4-8
+	  bytes deep) at the state machine's own pace, independently of the
+	  CPU. This is the real slack budget for how far the service thread
+	  above can fall behind before bytes are actually lost; size it for
+	  the longest realistic stall (e.g. a debugger halt, a higher-
+	  priority thread hogging the CPU) at the configured baudrate.
+
+endif # UART_RPI_PICO_PIO && UART_INTERRUPT_DRIVEN

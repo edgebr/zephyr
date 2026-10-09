@@ -576,6 +576,55 @@ static void modem_cellular_clear_registration_status(struct modem_cellular_data 
 	data->registration_status_gsm = CELLULAR_REGISTRATION_NOT_REGISTERED;
 	data->registration_status_gprs = CELLULAR_REGISTRATION_NOT_REGISTERED;
 	data->registration_status_lte = CELLULAR_REGISTRATION_NOT_REGISTERED;
+	data->registration_status_reported = CELLULAR_REGISTRATION_NOT_REGISTERED;
+}
+
+/* How far a domain's status has got; the highest one stands for the modem. */
+static int modem_cellular_registration_rank(enum cellular_registration_status status)
+{
+	switch (status) {
+	case CELLULAR_REGISTRATION_REGISTERED_HOME:
+	case CELLULAR_REGISTRATION_REGISTERED_ROAMING:
+		return 5;
+	case CELLULAR_REGISTRATION_NOT_REGISTERED:
+		return 0;
+	case CELLULAR_REGISTRATION_UNKNOWN:
+		return 1;
+	case CELLULAR_REGISTRATION_DENIED:
+		return 2;
+	case CELLULAR_REGISTRATION_SEARCHING:
+		return 3;
+	default:
+		/* Limited service: SMS only, emergency only, CSFB not preferred, RLOS */
+		return 4;
+	}
+}
+
+/*
+ * The modem's registration status across the three domains, as one value. The
+ * +CREG, +CGREG and +CEREG answers each carry their own domain, so reporting
+ * each answer as it arrives makes the status flip between domains on every
+ * poll, e.g. not registered (+CREG, no circuit-switched service) and searching
+ * (+CEREG) every period.
+ */
+static enum cellular_registration_status
+modem_cellular_registration_status(const struct modem_cellular_data *data)
+{
+	const enum cellular_registration_status domains[] = {
+		data->registration_status_lte,
+		data->registration_status_gprs,
+		data->registration_status_gsm,
+	};
+	enum cellular_registration_status best = domains[0];
+
+	for (size_t i = 1; i < ARRAY_SIZE(domains); i++) {
+		if (modem_cellular_registration_rank(domains[i]) >
+		    modem_cellular_registration_rank(best)) {
+			best = domains[i];
+		}
+	}
+
+	return best;
 }
 
 #if defined(CONFIG_MODEM_CELLULAR_STATS)
@@ -679,7 +728,12 @@ void modem_cellular_chat_on_cxreg(struct modem_chat *chat, char **argv, uint16_t
 			modem_cellular_emit_network_status(data, &evt);
 		}
 	}
-	modem_cellular_emit_reg_state(data, registration_status);
+
+	registration_status = modem_cellular_registration_status(data);
+	if (registration_status != data->registration_status_reported) {
+		data->registration_status_reported = registration_status;
+		modem_cellular_emit_reg_state(data, registration_status);
+	}
 }
 
 void modem_cellular_chat_on_cgev(struct modem_chat *chat, char **argv, uint16_t argc,

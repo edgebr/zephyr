@@ -265,4 +265,112 @@ ZTEST(cellular_network_status, test_neighbor_rescan_replaces)
 	zassert_equal(out[0].cell.lte.earfcn, 300);
 }
 
+#define REG_EVENTS_MAX 16
+
+static enum cellular_registration_status reg_events[REG_EVENTS_MAX];
+static int reg_event_count;
+
+static void reg_cb(const struct device *dev, enum cellular_event event, const void *payload,
+		   void *user_data)
+{
+	ARG_UNUSED(dev);
+	ARG_UNUSED(user_data);
+
+	if ((event == CELLULAR_EVENT_REGISTRATION_STATUS_CHANGED) &&
+	    (reg_event_count < REG_EVENTS_MAX)) {
+		reg_events[reg_event_count++] =
+			((const struct cellular_evt_registration_status *)payload)->status;
+	}
+}
+
+static void dispatch_noop(struct k_work *work)
+{
+	ARG_UNUSED(work);
+}
+
+static void init_reg_data(struct modem_cellular_data *data)
+{
+	init_data(data);
+	k_pipe_init(&data->event_pipe, data->event_buf, sizeof(data->event_buf));
+	k_work_init(&data->event_dispatch_work, dispatch_noop);
+	data->cb.fn = reg_cb;
+	data->cb.mask = CELLULAR_EVENT_REGISTRATION_STATUS_CHANGED;
+	reg_event_count = 0;
+}
+
+/* A read answer, +C*REG: <n>,<stat>, as the periodic script gets it. */
+static void reg_answer(struct modem_cellular_data *data, const char *prefix, const char *stat)
+{
+	char *argv[] = {(char *)prefix, "1", (char *)stat};
+
+	modem_cellular_chat_on_cxreg(NULL, argv, ARRAY_SIZE(argv), data);
+}
+
+/* One periodic poll: +CREG?, +CEREG?, +CGREG?, in the order the scripts send them. */
+static void reg_poll(struct modem_cellular_data *data, const char *gsm, const char *lte,
+		     const char *gprs)
+{
+	reg_answer(data, "+CREG: ", gsm);
+	reg_answer(data, "+CEREG: ", lte);
+	reg_answer(data, "+CGREG: ", gprs);
+}
+
+/* A modem with no circuit-switched service, searching and then registering on
+ * LTE, is reported as searching and then registered: the +CREG answer of every
+ * poll must not show up as a deregistration in between.
+ */
+ZTEST(cellular_network_status, test_registration_is_folded_across_domains)
+{
+	struct modem_cellular_data data;
+
+	init_reg_data(&data);
+
+	for (int i = 0; i < 3; i++) {
+		reg_poll(&data, "0", "2", "0");
+	}
+
+	zassert_equal(reg_event_count, 1, "searching is reported once, got %d", reg_event_count);
+	zassert_equal(reg_events[0], CELLULAR_REGISTRATION_SEARCHING);
+
+	for (int i = 0; i < 3; i++) {
+		reg_poll(&data, "0", "5", "0");
+	}
+
+	zassert_equal(reg_event_count, 2, "registered is reported once, got %d", reg_event_count);
+	zassert_equal(reg_events[1], CELLULAR_REGISTRATION_REGISTERED_ROAMING);
+}
+
+/* A change that does reach the folded status is still reported. */
+ZTEST(cellular_network_status, test_registration_loss_is_reported)
+{
+	struct modem_cellular_data data;
+	char *urc[] = {"+CEREG: ", "2"};
+
+	init_reg_data(&data);
+	reg_poll(&data, "0", "1", "0");
+	zassert_equal(reg_event_count, 1);
+	zassert_equal(reg_events[0], CELLULAR_REGISTRATION_REGISTERED_HOME);
+
+	modem_cellular_chat_on_cxreg(NULL, urc, ARRAY_SIZE(urc), &data);
+	zassert_equal(reg_event_count, 2);
+	zassert_equal(reg_events[1], CELLULAR_REGISTRATION_SEARCHING);
+}
+
+/* Any registered domain stands for the modem, and a denial outranks a domain
+ * that is merely not registered.
+ */
+ZTEST(cellular_network_status, test_registration_domain_ranking)
+{
+	struct modem_cellular_data data;
+
+	init_reg_data(&data);
+	reg_poll(&data, "1", "0", "0");
+	zassert_equal(reg_events[reg_event_count - 1], CELLULAR_REGISTRATION_REGISTERED_HOME);
+
+	init_reg_data(&data);
+	reg_poll(&data, "0", "3", "0");
+	zassert_equal(reg_event_count, 1);
+	zassert_equal(reg_events[0], CELLULAR_REGISTRATION_DENIED);
+}
+
 ZTEST_SUITE(cellular_network_status, NULL, NULL, NULL, NULL, NULL);

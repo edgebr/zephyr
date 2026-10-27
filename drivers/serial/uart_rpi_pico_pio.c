@@ -65,6 +65,7 @@ struct pio_uart_data {
 	void *cb_data;
 	atomic_t rx_irq_enabled;
 	atomic_t tx_irq_enabled;
+	struct k_sem poll_sem;
 	struct k_thread poll_thread;
 	K_KERNEL_STACK_MEMBER(poll_stack, CONFIG_UART_RPI_PICO_PIO_POLL_STACK_SIZE);
 	int rx_dma_chan;
@@ -318,6 +319,7 @@ static void pio_uart_irq_tx_enable(const struct device *dev)
 	struct pio_uart_data *data = dev->data;
 
 	atomic_set(&data->tx_irq_enabled, 1);
+	k_sem_give(&data->poll_sem);
 }
 
 static void pio_uart_irq_tx_disable(const struct device *dev)
@@ -357,6 +359,7 @@ static void pio_uart_irq_rx_enable(const struct device *dev)
 	struct pio_uart_data *data = dev->data;
 
 	atomic_set(&data->rx_irq_enabled, 1);
+	k_sem_give(&data->poll_sem);
 }
 
 static void pio_uart_irq_rx_disable(const struct device *dev)
@@ -402,6 +405,8 @@ static void pio_uart_irq_callback_set(const struct device *dev, uart_irq_callbac
 	data->cb_data = cb_data;
 
 	k_spin_unlock(&data->cb_lock, key);
+
+	k_sem_give(&data->poll_sem);
 }
 
 static void pio_uart_poll_thread(void *p1, void *p2, void *p3)
@@ -422,10 +427,18 @@ static void pio_uart_poll_thread(void *p1, void *p2, void *p3)
 
 		k_spin_unlock(&data->cb_lock, key);
 
-		if ((cb != NULL) &&
-		    (atomic_get(&data->rx_irq_enabled) || atomic_get(&data->tx_irq_enabled))) {
-			cb(dev, cb_data);
+		/*
+		 * Park the thread while nobody is listening, so an idle UART does
+		 * not keep a short kernel timeout pending and block deep sleep.
+		 * Enabling an IRQ or setting the callback wakes it up again.
+		 */
+		if ((cb == NULL) ||
+		    (!atomic_get(&data->rx_irq_enabled) && !atomic_get(&data->tx_irq_enabled))) {
+			k_sem_take(&data->poll_sem, K_FOREVER);
+			continue;
 		}
+
+		cb(dev, cb_data);
 
 		k_usleep(CONFIG_UART_RPI_PICO_PIO_POLL_PERIOD_US);
 	}
@@ -434,6 +447,8 @@ static void pio_uart_poll_thread(void *p1, void *p2, void *p3)
 static void pio_uart_start_poll_thread(const struct device *dev)
 {
 	struct pio_uart_data *data = dev->data;
+
+	k_sem_init(&data->poll_sem, 0, 1);
 
 	k_thread_create(&data->poll_thread, data->poll_stack,
 			K_KERNEL_STACK_SIZEOF(data->poll_stack), pio_uart_poll_thread,

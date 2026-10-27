@@ -2900,6 +2900,8 @@ static enum net_verdict tcp_in(struct tcp *conn, struct net_pkt *pkt)
 	}
 
 	/* Both the seqnum and the acknum are valid, then do processing. */
+	uint16_t prev_win = conn->send_win;
+
 	conn->send_win = ntohs(th_win(th));
 	if (conn->send_win > conn->send_win_max) {
 		NET_DBG("Lowering send window from %u to %u", conn->send_win, conn->send_win_max);
@@ -2914,6 +2916,16 @@ static enum net_verdict tcp_in(struct tcp *conn, struct net_pkt *pkt)
 		}
 	} else {
 		(void)k_work_cancel_delayable(&conn->persist_timer);
+
+		/* The retransmission timer is left stopped while the peer window is zero
+		 * (see tcp_resend_data()). Re-arm it once the window reopens, otherwise
+		 * the queued data would never be retransmitted.
+		 */
+		if (prev_win == 0 && conn->state == TCP_ESTABLISHED &&
+		    conn->send_data_total > 0 &&
+		    !k_work_delayable_is_pending(&conn->send_data_timer)) {
+			tcp_setup_retransmission(conn);
+		}
 	}
 
 	if (tcp_window_full(conn)) {

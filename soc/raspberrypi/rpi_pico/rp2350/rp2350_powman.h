@@ -88,6 +88,30 @@ enum rp2350_pm_wakeup_source rp2350_powman_wakeup_source(void);
  */
 bool rp2350_powman_had_powerdown(void);
 
+/**
+ * @brief Whether the last S2RAM attempt actually powered the switched core down.
+ *
+ * A suspend can be rejected by POWMAN (or not taken at all), in which case the
+ * PM exit notifiers still run but no hardware state was lost and
+ * last_swcore_pwrup still describes an older wakeup. Use this to tell a real
+ * wake from a rejected attempt.
+ *
+ * @return true if the last S2RAM attempt resumed from a real power-down.
+ */
+bool rp2350_powman_s2ram_powered_down(void);
+
+/**
+ * @brief Time spent in the last S2RAM attempt, in milliseconds.
+ *
+ * The kernel clock (SysTick) stops while the switched core is powered down, so
+ * uptime and everything derived from it lose this time. It is measured with the
+ * always-on POWMAN timer instead, for code that keeps wall-clock time.
+ *
+ * @return Elapsed POWMAN time since the suspend started, or 0 if that timer was
+ *         not running.
+ */
+uint64_t rp2350_powman_s2ram_slept_ms(void);
+
 #ifdef __cplusplus
 }
 #endif

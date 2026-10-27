@@ -9,6 +9,7 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/spinlock.h>
+#include <zephyr/pm/pm.h>
 
 #include <zephyr/drivers/misc/pio_rpi_pico/pio_rpi_pico.h>
 
@@ -56,12 +57,15 @@ struct pio_uart_config {
 struct pio_uart_data {
 	size_t tx_sm;
 	size_t rx_sm;
+	uint32_t tx_offset;
+	uint32_t rx_offset;
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	struct k_spinlock cb_lock;
 	uart_irq_callback_user_data_t cb;
 	void *cb_data;
 	atomic_t rx_irq_enabled;
 	atomic_t tx_irq_enabled;
+	struct k_sem poll_sem;
 	struct k_thread poll_thread;
 	K_KERNEL_STACK_MEMBER(poll_stack, CONFIG_UART_RPI_PICO_PIO_POLL_STACK_SIZE);
 	int rx_dma_chan;
@@ -94,17 +98,9 @@ RPI_PICO_PIO_DEFINE_PROGRAM(uart_rx, 1, 8,
 		/*  .wrap */
 );
 
-static int pio_uart_tx_init(PIO pio, uint32_t sm, uint32_t tx_pin, float div)
+static void pio_uart_tx_start(PIO pio, uint32_t sm, uint32_t offset, uint32_t tx_pin, float div)
 {
-	uint32_t offset;
-	pio_sm_config sm_config;
-
-	if (!pio_can_add_program(pio, RPI_PICO_PIO_GET_PROGRAM(uart_tx))) {
-		return -EBUSY;
-	}
-
-	offset = pio_add_program(pio, RPI_PICO_PIO_GET_PROGRAM(uart_tx));
-	sm_config = pio_get_default_sm_config();
+	pio_sm_config sm_config = pio_get_default_sm_config();
 
 	sm_config_set_sideset(&sm_config, SIDESET_BIT_COUNT, true, false);
 	sm_config_set_out_shift(&sm_config, true, false, 0);
@@ -120,21 +116,23 @@ static int pio_uart_tx_init(PIO pio, uint32_t sm, uint32_t tx_pin, float div)
 	pio_sm_set_pindirs_with_mask(pio, sm, BIT(tx_pin), BIT(tx_pin));
 	pio_sm_init(pio, sm, offset, &sm_config);
 	pio_sm_set_enabled(pio, sm, true);
+}
+
+static int pio_uart_tx_init(PIO pio, uint32_t sm, uint32_t tx_pin, float div, uint32_t *offset)
+{
+	if (!pio_can_add_program(pio, RPI_PICO_PIO_GET_PROGRAM(uart_tx))) {
+		return -EBUSY;
+	}
+
+	*offset = pio_add_program(pio, RPI_PICO_PIO_GET_PROGRAM(uart_tx));
+	pio_uart_tx_start(pio, sm, *offset, tx_pin, div);
 
 	return 0;
 }
 
-static int pio_uart_rx_init(PIO pio, uint32_t sm, uint32_t rx_pin, float div)
+static void pio_uart_rx_start(PIO pio, uint32_t sm, uint32_t offset, uint32_t rx_pin, float div)
 {
-	pio_sm_config sm_config;
-	uint32_t offset;
-
-	if (!pio_can_add_program(pio, RPI_PICO_PIO_GET_PROGRAM(uart_rx))) {
-		return -EBUSY;
-	}
-
-	offset = pio_add_program(pio, RPI_PICO_PIO_GET_PROGRAM(uart_rx));
-	sm_config = pio_get_default_sm_config();
+	pio_sm_config sm_config = pio_get_default_sm_config();
 
 	pio_sm_set_consecutive_pindirs(pio, sm, rx_pin, 1, false);
 	sm_config_set_in_pins(&sm_config, rx_pin);
@@ -148,6 +146,16 @@ static int pio_uart_rx_init(PIO pio, uint32_t sm, uint32_t rx_pin, float div)
 
 	pio_sm_init(pio, sm, offset, &sm_config);
 	pio_sm_set_enabled(pio, sm, true);
+}
+
+static int pio_uart_rx_init(PIO pio, uint32_t sm, uint32_t rx_pin, float div, uint32_t *offset)
+{
+	if (!pio_can_add_program(pio, RPI_PICO_PIO_GET_PROGRAM(uart_rx))) {
+		return -EBUSY;
+	}
+
+	*offset = pio_add_program(pio, RPI_PICO_PIO_GET_PROGRAM(uart_rx));
+	pio_uart_rx_start(pio, sm, *offset, rx_pin, div);
 
 	return 0;
 }
@@ -195,30 +203,14 @@ static void pio_uart_poll_out(const struct device *dev, unsigned char c)
  */
 static const uint32_t pio_uart_rx_dma_reload_count = PIO_UART_RX_DMA_RELOAD_COUNT;
 
-static int pio_uart_rx_dma_init(PIO pio, uint32_t rx_sm, struct pio_uart_data *data,
-				uint8_t *rx_dma_buf)
+static void pio_uart_rx_dma_start(PIO pio, uint32_t rx_sm, struct pio_uart_data *data)
 {
-	const struct device *dma_dev = DEVICE_DT_GET_ONE(raspberrypi_pico_dma);
 	io_rw_8 *rx_fifo_msb = (io_rw_8 *)&pio->rxf[rx_sm] + 3;
+	int data_chan = data->rx_dma_chan;
+	int ctrl_chan = data->rx_dma_ctrl_chan;
 	dma_channel_config dma_cfg;
 	dma_channel_config ctrl_cfg;
-	int data_chan;
-	int ctrl_chan;
 
-	data_chan = dma_request_channel(dma_dev, NULL);
-	if (data_chan < 0) {
-		return -EBUSY;
-	}
-
-	ctrl_chan = dma_request_channel(dma_dev, NULL);
-	if (ctrl_chan < 0) {
-		dma_release_channel(dma_dev, data_chan);
-		return -EBUSY;
-	}
-
-	data->rx_dma_chan = data_chan;
-	data->rx_dma_ctrl_chan = ctrl_chan;
-	data->rx_dma_buf = rx_dma_buf;
 	data->rx_read_pos = 0;
 
 	dma_cfg = dma_channel_get_default_config(data_chan);
@@ -251,6 +243,31 @@ static int pio_uart_rx_dma_init(PIO pio, uint32_t rx_sm, struct pio_uart_data *d
 	dma_channel_configure(ctrl_chan, &ctrl_cfg,
 			      (volatile void *)&dma_channel_hw_addr(data_chan)->al1_transfer_count_trig,
 			      &pio_uart_rx_dma_reload_count, 1, false);
+}
+
+static int pio_uart_rx_dma_init(PIO pio, uint32_t rx_sm, struct pio_uart_data *data,
+				uint8_t *rx_dma_buf)
+{
+	const struct device *dma_dev = DEVICE_DT_GET_ONE(raspberrypi_pico_dma);
+	int data_chan;
+	int ctrl_chan;
+
+	data_chan = dma_request_channel(dma_dev, NULL);
+	if (data_chan < 0) {
+		return -EBUSY;
+	}
+
+	ctrl_chan = dma_request_channel(dma_dev, NULL);
+	if (ctrl_chan < 0) {
+		dma_release_channel(dma_dev, data_chan);
+		return -EBUSY;
+	}
+
+	data->rx_dma_chan = data_chan;
+	data->rx_dma_ctrl_chan = ctrl_chan;
+	data->rx_dma_buf = rx_dma_buf;
+
+	pio_uart_rx_dma_start(pio, rx_sm, data);
 
 	return 0;
 }
@@ -302,6 +319,7 @@ static void pio_uart_irq_tx_enable(const struct device *dev)
 	struct pio_uart_data *data = dev->data;
 
 	atomic_set(&data->tx_irq_enabled, 1);
+	k_sem_give(&data->poll_sem);
 }
 
 static void pio_uart_irq_tx_disable(const struct device *dev)
@@ -341,6 +359,7 @@ static void pio_uart_irq_rx_enable(const struct device *dev)
 	struct pio_uart_data *data = dev->data;
 
 	atomic_set(&data->rx_irq_enabled, 1);
+	k_sem_give(&data->poll_sem);
 }
 
 static void pio_uart_irq_rx_disable(const struct device *dev)
@@ -386,6 +405,8 @@ static void pio_uart_irq_callback_set(const struct device *dev, uart_irq_callbac
 	data->cb_data = cb_data;
 
 	k_spin_unlock(&data->cb_lock, key);
+
+	k_sem_give(&data->poll_sem);
 }
 
 static void pio_uart_poll_thread(void *p1, void *p2, void *p3)
@@ -406,10 +427,18 @@ static void pio_uart_poll_thread(void *p1, void *p2, void *p3)
 
 		k_spin_unlock(&data->cb_lock, key);
 
-		if ((cb != NULL) &&
-		    (atomic_get(&data->rx_irq_enabled) || atomic_get(&data->tx_irq_enabled))) {
-			cb(dev, cb_data);
+		/*
+		 * Park the thread while nobody is listening, so an idle UART does
+		 * not keep a short kernel timeout pending and block deep sleep.
+		 * Enabling an IRQ or setting the callback wakes it up again.
+		 */
+		if ((cb == NULL) ||
+		    (!atomic_get(&data->rx_irq_enabled) && !atomic_get(&data->tx_irq_enabled))) {
+			k_sem_take(&data->poll_sem, K_FOREVER);
+			continue;
 		}
+
+		cb(dev, cb_data);
 
 		k_usleep(CONFIG_UART_RPI_PICO_PIO_POLL_PERIOD_US);
 	}
@@ -418,6 +447,8 @@ static void pio_uart_poll_thread(void *p1, void *p2, void *p3)
 static void pio_uart_start_poll_thread(const struct device *dev)
 {
 	struct pio_uart_data *data = dev->data;
+
+	k_sem_init(&data->poll_sem, 0, 1);
 
 	k_thread_create(&data->poll_thread, data->poll_stack,
 			K_KERNEL_STACK_SIZEOF(data->poll_stack), pio_uart_poll_thread,
@@ -450,12 +481,12 @@ static int pio_uart_init(const struct device *dev)
 	data->tx_sm = tx_sm;
 	data->rx_sm = rx_sm;
 
-	retval = pio_uart_tx_init(pio, tx_sm, config->tx_pin, sm_clock_div);
+	retval = pio_uart_tx_init(pio, tx_sm, config->tx_pin, sm_clock_div, &data->tx_offset);
 	if (retval < 0) {
 		return retval;
 	}
 
-	retval = pio_uart_rx_init(pio, rx_sm, config->rx_pin, sm_clock_div);
+	retval = pio_uart_rx_init(pio, rx_sm, config->rx_pin, sm_clock_div, &data->rx_offset);
 	if (retval < 0) {
 		return retval;
 	}
@@ -528,3 +559,87 @@ static DEVICE_API(uart, pio_uart_driver_api) = {
 			      &pio_uart_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(PIO_UART_INIT)
+
+#ifdef CONFIG_PM_S2RAM
+/*
+ * A suspend-to-RAM power-down resets the PIO and DMA blocks: the instruction
+ * memory, the state machines and the RX DMA channels come back empty, while the
+ * driver state (claimed SMs, program offsets, DMA channels) is still valid in
+ * retained RAM. Put the hardware back as pio_uart_init() left it, reusing those
+ * resources instead of allocating new ones.
+ */
+static void pio_uart_load_program(PIO pio, const pio_program_t *program, uint32_t offset)
+{
+	for (uint32_t i = 0; i < program->length; i++) {
+		uint16_t instr = program->instructions[i];
+
+		/* JMP targets are program-relative; relocate them like pio_add_program(). */
+		if ((instr & 0xe000u) == 0u) {
+			instr += offset;
+		}
+
+		pio->instr_mem[offset + i] = instr;
+	}
+}
+
+static void pio_uart_hw_restore(const struct device *dev)
+{
+	const struct pio_uart_config *config = dev->config;
+	struct pio_uart_data *data = dev->data;
+	PIO pio = pio_rpi_pico_get_pio(config->piodev);
+	float sm_clock_div;
+	unsigned int key;
+
+	/* A rejected suspend leaves the state machines running: nothing to do. */
+	if ((pio->ctrl & BIT(PIO_CTRL_SM_ENABLE_LSB + data->tx_sm)) != 0U) {
+		return;
+	}
+
+	sm_clock_div = (float)clock_get_hz(clk_sys) / (CYCLES_PER_BIT * config->baudrate);
+
+	key = irq_lock();
+
+	pio_uart_load_program(pio, RPI_PICO_PIO_GET_PROGRAM(uart_tx), data->tx_offset);
+	pio_uart_load_program(pio, RPI_PICO_PIO_GET_PROGRAM(uart_rx), data->rx_offset);
+
+	pio_uart_tx_start(pio, data->tx_sm, data->tx_offset, config->tx_pin, sm_clock_div);
+	pio_uart_rx_start(pio, data->rx_sm, data->rx_offset, config->rx_pin, sm_clock_div);
+
+#ifdef CONFIG_UART_INTERRUPT_DRIVEN
+	pio_uart_rx_dma_start(pio, data->rx_sm, data);
+#endif /* CONFIG_UART_INTERRUPT_DRIVEN */
+
+	irq_unlock(key);
+}
+
+#define PIO_UART_DEVICE_ENTRY(idx) DEVICE_DT_INST_GET(idx),
+
+static const struct device *const pio_uart_devices[] = {
+	DT_INST_FOREACH_STATUS_OKAY(PIO_UART_DEVICE_ENTRY)};
+
+static void pio_uart_pm_state_exit(enum pm_state state)
+{
+	if (state != PM_STATE_SUSPEND_TO_RAM) {
+		return;
+	}
+
+	for (size_t i = 0; i < ARRAY_SIZE(pio_uart_devices); i++) {
+		if (device_is_ready(pio_uart_devices[i])) {
+			pio_uart_hw_restore(pio_uart_devices[i]);
+		}
+	}
+}
+
+static struct pm_notifier pio_uart_pm_notifier = {
+	.state_exit = pio_uart_pm_state_exit,
+};
+
+static int pio_uart_pm_notifier_init(void)
+{
+	pm_notifier_register(&pio_uart_pm_notifier);
+
+	return 0;
+}
+
+SYS_INIT(pio_uart_pm_notifier_init, POST_KERNEL, CONFIG_SERIAL_INIT_PRIORITY);
+#endif /* CONFIG_PM_S2RAM */

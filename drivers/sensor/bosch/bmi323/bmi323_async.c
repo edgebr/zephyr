@@ -42,8 +42,7 @@ LOG_MODULE_DECLARE(bosch_bmi323, CONFIG_SENSOR_LOG_LEVEL);
  * Runs in RTIO completion context — must not block.
  */
 /* Forward declarations */
-static void bmi323_complete_cb(struct rtio *r, const struct rtio_sqe *sqe,
-				   int res, void *arg);
+static void bmi323_complete_cb(struct rtio *r, const struct rtio_sqe *sqe, void *arg);
 static void bmi323_start_next(struct bosch_bmi323_data *data);
 
 /*
@@ -138,8 +137,7 @@ static void bmi323_start_next(struct bosch_bmi323_data *data)
 	bmi323_start_transfer(next_sqe, data);
 }
 
-static void bmi323_complete_cb(struct rtio *r, const struct rtio_sqe *sqe,
-				   int res, void *arg)
+static void bmi323_complete_cb(struct rtio *r, const struct rtio_sqe *sqe, void *arg)
 {
 	const struct device *dev = arg;
 	struct bosch_bmi323_data *data = dev->data;
@@ -155,8 +153,16 @@ static void bmi323_complete_cb(struct rtio *r, const struct rtio_sqe *sqe,
 	bool fetch_gyro = false;
 	bool fetch_temp = false;
 	int rc;
+	struct rtio_cqe *cqe;
+	int res = 0;
 
-	ARG_UNUSED(r);
+	/* Drain the completions of the bus transfer and keep the first error */
+	while ((cqe = rtio_cqe_consume(r)) != NULL) {
+		if ((res == 0) && (cqe->result < 0)) {
+			res = cqe->result;
+		}
+		rtio_cqe_release(r, cqe);
+	}
 
 	/* Check result from RTIO */
 	if (res < 0) {

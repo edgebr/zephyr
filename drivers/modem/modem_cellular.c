@@ -2419,6 +2419,7 @@ MODEM_CHAT_SCRIPT_CMDS_DEFINE(quectel_eg915u_init_chat_script_cmds,
 			     MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match),
 			     MODEM_CHAT_SCRIPT_CMD_RESP("AT+CIMI", cimi_match),
 			     MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match),
+			     MODEM_CHAT_SCRIPT_CMD_RESP("AT+IFC=2,2", ok_match),
 			     MODEM_CHAT_SCRIPT_CMD_RESP("AT+CMUX=0,0,5,127", ok_match));
 
 MODEM_CHAT_SCRIPT_DEFINE(quectel_eg915u_init_chat_script, quectel_eg915u_init_chat_script_cmds,
